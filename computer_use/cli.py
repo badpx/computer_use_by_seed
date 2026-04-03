@@ -7,7 +7,7 @@ import sys
 import argparse
 from typing import Dict, Any, Optional
 
-from .agent import ComputerUseAgent
+from .compat import ensure_supported_python
 from .config import config
 
 
@@ -15,8 +15,8 @@ def print_banner():
     """打印欢迎横幅"""
     banner = """
 ╔══════════════════════════════════════════════════════════╗
-║              Computer Use Tool - 本地 GUI 自动化          ║
-║                     Powered by 火山方舟                    ║
+║              Computer Use Tool - 本地 GUI 自动化         ║
+║                     Powered by 火山方舟                  ║
 ╚══════════════════════════════════════════════════════════╝
 """
     print(banner)
@@ -51,6 +51,9 @@ def interactive_mode(
     
     print("[交互模式]")
     print("请输入您的指令（输入 'quit' 或 'exit' 退出）\n")
+
+    ensure_supported_python()
+    from .agent import ComputerUseAgent
     
     # 初始化代理
     try:
@@ -120,6 +123,9 @@ def single_task_mode(
     if verbose:
         print_banner()
         print(f"[任务] {instruction}\n")
+
+    ensure_supported_python()
+    from .agent import ComputerUseAgent
     
     # 初始化代理
     agent = ComputerUseAgent(
@@ -143,6 +149,8 @@ def single_task_mode(
 
 def main():
     """主入口函数"""
+    ensure_supported_python()
+
     parser = argparse.ArgumentParser(
         description='Computer Use Tool - 本地 GUI 自动化工具',
         formatter_class=argparse.RawDescriptionHelpFormatter,

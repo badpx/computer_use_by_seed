@@ -13,8 +13,11 @@
 ## 环境要求
 
 - **操作系统**: macOS / Windows / Linux
-- **Python**: 3.8 或更高版本
+- **Python**: 3.8 - 3.13
 - **网络**: 可访问火山方舟 API
+
+> 目前不建议使用 Python 3.14+。
+> `volcengine-python-sdk[ark]` 依赖 `pydantic.v1` 兼容层，而该兼容层在 Python 3.14+ 上会触发兼容性告警，且不保证可正常工作。
 
 ## 快速开始
 
@@ -22,11 +25,17 @@
 
 ```bash
 # 创建虚拟环境
-python -m venv venv
+python3.13 -m venv venv
 
 # 激活虚拟环境
 source venv/bin/activate  # macOS/Linux
 # venv\Scripts\activate   # Windows
+```
+
+如果你的机器默认 `python` 已经是 3.13，也可以使用：
+
+```bash
+python -m venv venv
 ```
 
 ### 2. 安装依赖
@@ -181,6 +190,16 @@ python -m computer_use "打开记事本" --quiet
 ## 故障排除
 
 ### 常见问题
+
+**Q: 运行时出现 `Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater` 告警怎么办？**
+A: 这是 `volcengine-python-sdk[ark]` 依赖链触发的兼容性告警，不是本项目自己的逻辑问题。请改用 Python 3.13 或更低版本重新创建虚拟环境，例如：
+
+```bash
+rm -rf venv
+python3.13 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
 **Q: 启动时提示缺少 API 密钥**
 A: 请设置 `ARK_API_KEY` 环境变量或创建 `.env` 文件

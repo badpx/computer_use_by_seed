@@ -10,17 +10,30 @@ import os
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from computer_use.compat import (
+    MAX_TESTED_PYTHON,
+    MIN_PYTHON,
+    get_python_compatibility_error,
+    python_version_text,
+)
+
 
 def check_python_version():
     """检查 Python 版本"""
     print("[1/5] 检查 Python 版本...")
     version = sys.version_info
-    if version.major >= 3 and version.minor >= 8:
+    error = get_python_compatibility_error((version.major, version.minor))
+    if error is None:
         print(f"  ✓ Python {version.major}.{version.minor}.{version.micro}")
+        print(
+            "  ✓ 兼容范围: "
+            f"{python_version_text(MIN_PYTHON)} - {python_version_text(MAX_TESTED_PYTHON)}"
+        )
         return True
-    else:
-        print(f"  ✗ Python {version.major}.{version.minor}.{version.micro} (需要 >= 3.8)")
-        return False
+
+    print(f"  ✗ Python {version.major}.{version.minor}.{version.micro}")
+    print(f"  ✗ {error}")
+    return False
 
 
 def check_dependencies():
@@ -172,7 +185,13 @@ def main():
             print("提示: 请设置 ARK_API_KEY 环境变量或创建 .env 文件")
             print("  cp .env.example .env")
             print("  # 编辑 .env 文件，填入你的 API 密钥")
-        
+
+        if not checks[0]:  # Python 版本不兼容
+            print()
+            print("提示: 请使用兼容版本重建虚拟环境:")
+            print("  python3.13 -m venv venv")
+            print("  source venv/bin/activate")
+
         return 1
 
 

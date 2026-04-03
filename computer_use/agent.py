@@ -53,7 +53,9 @@ class ComputerUseAgent:
         self.max_steps = max_steps if max_steps is not None else config.max_steps
         self.language = language
         self.verbose = verbose
-        
+
+        config.validate()
+
         # 初始化客户端
         self.client = Ark(
             base_url=self.base_url,

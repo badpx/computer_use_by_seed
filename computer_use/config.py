@@ -47,9 +47,6 @@ class Config:
         
         # 3. 加载环境变量（覆盖配置文件）
         self._load_from_env()
-        
-        # 验证必需配置
-        self._validate()
     
     def _load_from_file(self):
         """从 .env 文件加载配置"""
@@ -89,6 +86,10 @@ class Config:
                 f"缺少必需配置项: {', '.join(missing)}\n"
                 f"请通过环境变量或 .env 文件设置"
             )
+
+    def validate(self):
+        """对外暴露的显式配置校验。"""
+        self._validate()
     
     def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """获取配置项"""

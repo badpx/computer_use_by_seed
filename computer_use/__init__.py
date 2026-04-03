@@ -3,13 +3,40 @@ Computer Use Tool - 本地 GUI 自动化工具
 """
 
 from .config import config, Config
-from .agent import ComputerUseAgent
-from .screenshot import capture_screenshot, screenshot_manager
-from .action_parser import parse_action, ActionParser
-from .action_executor import execute_action, ActionExecutor
+from .compat import ensure_supported_python
 
 __version__ = '1.0.0'
 __author__ = 'Computer Use Tool'
+
+
+def __getattr__(name):
+    if name == 'ComputerUseAgent':
+        ensure_supported_python()
+        from .agent import ComputerUseAgent
+
+        return ComputerUseAgent
+    if name in {'capture_screenshot', 'screenshot_manager'}:
+        from .screenshot import capture_screenshot, screenshot_manager
+
+        return {
+            'capture_screenshot': capture_screenshot,
+            'screenshot_manager': screenshot_manager,
+        }[name]
+    if name in {'parse_action', 'ActionParser'}:
+        from .action_parser import ActionParser, parse_action
+
+        return {
+            'parse_action': parse_action,
+            'ActionParser': ActionParser,
+        }[name]
+    if name in {'execute_action', 'ActionExecutor'}:
+        from .action_executor import ActionExecutor, execute_action
+
+        return {
+            'execute_action': execute_action,
+            'ActionExecutor': ActionExecutor,
+        }[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     # 配置
