@@ -135,11 +135,17 @@ def interactive_mode(
             
             # 显示结果
             if result['success']:
-                print(f"\n[执行成功] 共执行 {len(result['steps'])} 步")
+                print(
+                    f"\n[执行成功] 共执行 {len(result['steps'])} 步，"
+                    f"总耗时 {result.get('elapsed_time_text', '未知')}"
+                )
                 if result['final_response']:
                     print(f"[最终回复] {result['final_response']}")
             else:
-                print(f"\n[执行失败] {result.get('error', '未知错误')}")
+                print(
+                    f"\n[执行失败] {result.get('error', '未知错误')}，"
+                    f"总耗时 {result.get('elapsed_time_text', '未知')}"
+                )
             
             print()
             
@@ -192,9 +198,15 @@ def single_task_mode(
     if verbose:
         print()
         if result['success']:
-            print(f"[成功] 任务完成，共执行 {len(result['steps'])} 步")
+            print(
+                f"[成功] 任务完成，共执行 {len(result['steps'])} 步，"
+                f"总耗时 {result.get('elapsed_time_text', '未知')}"
+            )
         else:
-            print(f"[失败] {result.get('error', '未知错误')}")
+            print(
+                f"[失败] {result.get('error', '未知错误')}，"
+                f"总耗时 {result.get('elapsed_time_text', '未知')}"
+            )
     
     return result
 

@@ -119,7 +119,10 @@ class ComputerUseAgent:
             'error': None,
             'final_response': None,
             'context_log_path': None,
+            'elapsed_seconds': None,
+            'elapsed_time_text': None,
         }
+        task_start_time = time.perf_counter()
 
         self.history = []
         self.conversation_messages = []
@@ -141,6 +144,7 @@ class ComputerUseAgent:
             # 多轮执行循环
             for step in range(self.max_steps):
                 self.current_step = step + 1
+                step_start_time = time.perf_counter()
                 
                 if self.verbose:
                     print(f"\n[步骤 {self.current_step}/{self.max_steps}]")
@@ -193,6 +197,7 @@ class ComputerUseAgent:
                     parsed_action = self._format_action(action)
                 except Exception as e:
                     failure_reason = self._format_parse_failure_reason(e, response)
+                    step_elapsed_seconds = time.perf_counter() - step_start_time
                     step_record = self._build_step_record(
                         step=self.current_step,
                         screenshot_path=screenshot_path,
@@ -203,6 +208,7 @@ class ComputerUseAgent:
                         execution_status='failed',
                         execution_result=None,
                         failure_reason=failure_reason,
+                        elapsed_seconds=step_elapsed_seconds,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action='')
@@ -220,6 +226,9 @@ class ComputerUseAgent:
                     )
                     if self.verbose:
                         print(f"  解析失败: {failure_reason}")
+                        print(
+                            f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}"
+                        )
                     continue
 
                 self._append_assistant_message(response)
@@ -231,6 +240,7 @@ class ComputerUseAgent:
                 if action['action_type'] == 'finished':
                     result['success'] = True
                     result['final_response'] = action['action_inputs'].get('content', '')
+                    step_elapsed_seconds = time.perf_counter() - step_start_time
                     step_record = self._build_step_record(
                         step=self.current_step,
                         screenshot_path=screenshot_path,
@@ -241,6 +251,7 @@ class ComputerUseAgent:
                         execution_status='finished',
                         execution_result=result['final_response'],
                         failure_reason=None,
+                        elapsed_seconds=step_elapsed_seconds,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -256,9 +267,17 @@ class ComputerUseAgent:
                         failure_reason=None,
                     )
                     
+                    result['elapsed_seconds'] = time.perf_counter() - task_start_time
+                    result['elapsed_time_text'] = self._format_elapsed_time(
+                        result['elapsed_seconds']
+                    )
                     if self.verbose:
+                        print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
                         print(f"\n{'='*60}")
-                        print(f"[任务完成] {result['final_response']}")
+                        print(
+                            f"[任务完成] {result['final_response']} "
+                            f"(总耗时: {result['elapsed_time_text']})"
+                        )
                         print(f"{'='*60}")
                     break
                 
@@ -275,6 +294,7 @@ class ComputerUseAgent:
                     exec_result = executor.execute(action)
                 except Exception as e:
                     failure_reason = str(e)
+                    step_elapsed_seconds = time.perf_counter() - step_start_time
                     step_record = self._build_step_record(
                         step=self.current_step,
                         screenshot_path=screenshot_path,
@@ -285,6 +305,7 @@ class ComputerUseAgent:
                         execution_status='failed',
                         execution_result=None,
                         failure_reason=failure_reason,
+                        elapsed_seconds=step_elapsed_seconds,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -301,10 +322,14 @@ class ComputerUseAgent:
                     )
                     if self.verbose:
                         print(f"  执行失败: {failure_reason}")
+                        print(
+                            f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}"
+                        )
                     continue
                 
                 if exec_result == 'DONE':
                     result['success'] = True
+                    step_elapsed_seconds = time.perf_counter() - step_start_time
                     step_record = self._build_step_record(
                         step=self.current_step,
                         screenshot_path=screenshot_path,
@@ -315,6 +340,7 @@ class ComputerUseAgent:
                         execution_status='finished',
                         execution_result='DONE',
                         failure_reason=None,
+                        elapsed_seconds=step_elapsed_seconds,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -328,12 +354,18 @@ class ComputerUseAgent:
                         execution_result='DONE',
                         failure_reason=None,
                     )
+                    result['elapsed_seconds'] = time.perf_counter() - task_start_time
+                    result['elapsed_time_text'] = self._format_elapsed_time(
+                        result['elapsed_seconds']
+                    )
                     if self.verbose:
+                        print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
                         print(f"\n{'='*60}")
-                        print(f"[任务完成]")
+                        print(f"[任务完成] (总耗时: {result['elapsed_time_text']})")
                         print(f"{'='*60}")
                     break
 
+                step_elapsed_seconds = time.perf_counter() - step_start_time
                 step_record = self._build_step_record(
                     step=self.current_step,
                     screenshot_path=screenshot_path,
@@ -344,6 +376,7 @@ class ComputerUseAgent:
                     execution_status='success',
                     execution_result=exec_result,
                     failure_reason=None,
+                    elapsed_seconds=step_elapsed_seconds,
                 )
                 result['steps'].append(step_record)
                 self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -358,6 +391,8 @@ class ComputerUseAgent:
                     execution_result=exec_result,
                     failure_reason=None,
                 )
+                if self.verbose:
+                    print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
                 
                 # 等待一小段时间，让操作生效
                 time.sleep(0.5)
@@ -374,6 +409,12 @@ class ComputerUseAgent:
                 print(f"\n[错误] {e}")
                 import traceback
                 traceback.print_exc()
+
+        if result['elapsed_seconds'] is None:
+            result['elapsed_seconds'] = time.perf_counter() - task_start_time
+            result['elapsed_time_text'] = self._format_elapsed_time(
+                result['elapsed_seconds']
+            )
 
         self.context_logger.end_task(
             success=result['success'],
@@ -525,6 +566,19 @@ class ComputerUseAgent:
         response_preview = ' '.join(response.split())
         return f'无法解析动作: {self._truncate_text(response_preview)}'
 
+    def _format_elapsed_time(self, elapsed_seconds: float) -> str:
+        """将耗时秒数格式化为易读文本。"""
+        elapsed_seconds = max(0.0, elapsed_seconds)
+        if elapsed_seconds < 60:
+            return f'{elapsed_seconds:.1f} 秒'
+
+        minutes, seconds = divmod(elapsed_seconds, 60)
+        if minutes < 60:
+            return f'{int(minutes)} 分 {seconds:.1f} 秒'
+
+        hours, minutes = divmod(int(minutes), 60)
+        return f'{hours} 小时 {minutes} 分 {seconds:.1f} 秒'
+
     def _truncate_text(self, text: str, max_length: int = 200) -> str:
         """截断过长文本，避免错误信息污染日志和控制台。"""
         if len(text) <= max_length:
@@ -541,7 +595,8 @@ class ComputerUseAgent:
         thought_summary: str,
         execution_status: str,
         execution_result: Optional[str],
-        failure_reason: Optional[str]
+        failure_reason: Optional[str],
+        elapsed_seconds: float,
     ) -> Dict[str, Any]:
         """构建返回结果中的单步记录。"""
         return {
@@ -554,6 +609,8 @@ class ComputerUseAgent:
             'execution_status': execution_status,
             'execution_result': execution_result,
             'failure_reason': failure_reason,
+            'elapsed_seconds': elapsed_seconds,
+            'elapsed_time_text': self._format_elapsed_time(elapsed_seconds),
         }
 
     def _record_history_entry(
