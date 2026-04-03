@@ -12,6 +12,8 @@ import pyautogui
 
 from .config import config
 
+DOUBLE_CLICK_INTERVAL = 0.10
+
 
 class ActionExecutor:
     """动作执行器"""
@@ -171,7 +173,13 @@ class ActionExecutor:
         
         # 执行点击
         if clicks == 2:
-            pyautogui.doubleClick(abs_x, abs_y, button=button)
+            pyautogui.click(
+                abs_x,
+                abs_y,
+                button=button,
+                clicks=2,
+                interval=DOUBLE_CLICK_INTERVAL,
+            )
             action_name = '双击'
         else:
             pyautogui.click(abs_x, abs_y, button=button, clicks=clicks)

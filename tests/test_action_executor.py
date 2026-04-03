@@ -12,6 +12,7 @@ class FakePyAutoGUI(types.ModuleType):
         self.hotkey_calls = []
         self.write_calls = []
         self.press_calls = []
+        self.click_calls = []
         self.move_to_calls = []
         self.scroll_calls = []
 
@@ -19,7 +20,7 @@ class FakePyAutoGUI(types.ModuleType):
         self.hotkey_calls.append(keys)
 
     def click(self, *args, **kwargs):
-        pass
+        self.click_calls.append((args, kwargs))
 
     def doubleClick(self, *args, **kwargs):
         pass
@@ -156,6 +157,28 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         self.assertEqual(self.fake_pyautogui.move_to_calls, [((498, 558), {})])
         self.assertEqual(self.fake_pyautogui.scroll_calls, [((-500,), {})])
         self.assertEqual(result, '滚动down: (498, 558)')
+
+    def test_left_double_uses_two_clicks_with_interval(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=1000,
+            image_height=1000,
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'left_double',
+                'action_inputs': {
+                    'start_box': [250, 750],
+                },
+            }
+        )
+
+        self.assertEqual(
+            self.fake_pyautogui.click_calls,
+            [((250, 750), {'button': 'left', 'clicks': 2, 'interval': 0.12})],
+        )
+        self.assertEqual(result, '双击 (250, 750)')
 
 
 if __name__ == '__main__':
