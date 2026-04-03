@@ -1,14 +1,52 @@
-"""
-CLI 交互入口模块
-支持交互式命令行和单次任务执行
-"""
-
-import sys
 import argparse
-from typing import Dict, Any, Optional
+import importlib
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from .compat import ensure_supported_python
 from .config import config
+
+
+DEFAULT_HISTORY_FILE = Path.home() / '.computer_use_history'
+
+
+def _resolve_history_file(history_file: Optional[Path] = None) -> Path:
+    """解析交互模式历史记录文件路径。"""
+    if history_file is not None:
+        return Path(history_file).expanduser()
+
+    env_path = os.getenv('COMPUTER_USE_HISTORY_FILE')
+    if env_path:
+        return Path(env_path).expanduser()
+
+    return DEFAULT_HISTORY_FILE
+
+
+def _create_prompt_session(history_file: Optional[Path] = None):
+    """优先使用 prompt_toolkit 创建带文件历史的输入会话。"""
+    try:
+        prompt_toolkit = importlib.import_module('prompt_toolkit')
+        prompt_toolkit_history = importlib.import_module('prompt_toolkit.history')
+    except ImportError:
+        return None
+
+    history_path = _resolve_history_file(history_file)
+    try:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history = prompt_toolkit_history.FileHistory(str(history_path))
+        return prompt_toolkit.PromptSession(history=history)
+    except OSError:
+        return prompt_toolkit.PromptSession()
+
+
+def _read_instruction(prompt_session, prompt_text: str = '> ') -> str:
+    """从 prompt_toolkit 或内建 input 读取用户指令。"""
+    if prompt_session is not None:
+        return prompt_session.prompt(prompt_text).strip()
+
+    return input(prompt_text).strip()
 
 
 def print_banner():
@@ -59,7 +97,12 @@ def interactive_mode(
 
     ensure_supported_python()
     from .agent import ComputerUseAgent
-    
+    prompt_session = _create_prompt_session()
+
+    if verbose and prompt_session is None:
+        print("[提示] 未检测到 prompt_toolkit，回退到基础输入模式")
+        print()
+
     # 初始化代理
     try:
         agent = ComputerUseAgent(
@@ -75,7 +118,7 @@ def interactive_mode(
     while True:
         try:
             # 获取用户输入
-            instruction = input("> ").strip()
+            instruction = _read_instruction(prompt_session)
             
             # 检查退出命令
             if instruction.lower() in ['quit', 'exit', 'q']:

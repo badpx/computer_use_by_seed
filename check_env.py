@@ -44,7 +44,8 @@ def check_dependencies():
         'pyautogui',
         'PIL',
         'pyperclip',
-        'dotenv'
+        'dotenv',
+        'prompt_toolkit',
     ]
     
     missing = []

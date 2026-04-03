@@ -68,6 +68,15 @@ cp .env.example .env
 python -m computer_use
 ```
 
+交互模式默认使用 `prompt_toolkit`，支持：
+
+- 上下键切换历史输入
+- 左右键编辑当前输入
+- 直接粘贴长文本
+- 历史记录持久化到 `~/.computer_use_history`
+
+如果运行环境中缺少 `prompt_toolkit`，CLI 会自动回退到基础 `input()` 模式。
+
 #### 单次任务
 
 ```bash
