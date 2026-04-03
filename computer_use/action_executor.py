@@ -308,14 +308,15 @@ class ActionExecutor:
         direction = action_inputs.get('direction', 'down').lower()
         
         # 确定滚动方向和次数
-        scroll_amount = 5
-        if 'up' in direction or 'left' in direction:
+        scroll_amount = 500
+        if 'down' in direction or 'right' in direction:
             scroll_amount = -scroll_amount
         
         if start_box is not None:
             # 在指定位置滚动
             x, y = self._get_coordinates_from_box(start_box)
-            pyautogui.scroll(scroll_amount, x=x, y=y)
+            pyautogui.moveTo(x, y)
+            pyautogui.scroll(scroll_amount)
             result = f"滚动{direction}: ({x}, {y})"
         else:
             # 在当前位置滚动

@@ -12,6 +12,8 @@ class FakePyAutoGUI(types.ModuleType):
         self.hotkey_calls = []
         self.write_calls = []
         self.press_calls = []
+        self.move_to_calls = []
+        self.scroll_calls = []
 
     def hotkey(self, *keys):
         self.hotkey_calls.append(keys)
@@ -23,7 +25,7 @@ class FakePyAutoGUI(types.ModuleType):
         pass
 
     def moveTo(self, *args, **kwargs):
-        pass
+        self.move_to_calls.append((args, kwargs))
 
     def dragTo(self, *args, **kwargs):
         pass
@@ -41,7 +43,7 @@ class FakePyAutoGUI(types.ModuleType):
         self.press_calls.append((args, kwargs))
 
     def scroll(self, *args, **kwargs):
-        pass
+        self.scroll_calls.append((args, kwargs))
 
 
 class ActionExecutorHotkeyTests(unittest.TestCase):
@@ -110,6 +112,27 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         self.assertEqual(self.fake_pyperclip.copied_text, '计算器')
         self.assertEqual(self.fake_pyautogui.hotkey_calls, [('command', 'v')])
         self.assertEqual(result, '输入文本(剪贴板): 计算器')
+
+    def test_scroll_moves_pointer_to_target_and_uses_visible_amount(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=1000,
+            image_height=1000,
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'scroll',
+                'action_inputs': {
+                    'direction': 'down',
+                    'start_box': [498, 558],
+                },
+            }
+        )
+
+        self.assertEqual(self.fake_pyautogui.move_to_calls, [((498, 558), {})])
+        self.assertEqual(self.fake_pyautogui.scroll_calls, [((500,), {})])
+        self.assertEqual(result, '滚动down: (498, 558)')
 
 
 if __name__ == '__main__':
