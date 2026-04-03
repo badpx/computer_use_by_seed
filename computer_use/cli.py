@@ -30,6 +30,7 @@ def print_config_info():
     print(f"  最大步数: {config.max_steps}")
     print(f"  保存截图: {'是' if config.save_screenshot else '否'}")
     print(f"  截图目录: {config.screenshot_dir}")
+    print(f"  自然滚动: {'是' if config.natural_scroll else '否'}")
     print(f"  上下文日志: {'是' if config.save_context_log else '否'}")
     print(f"  日志目录: {config.context_log_dir}")
     print()
@@ -38,6 +39,7 @@ def print_config_info():
 def interactive_mode(
     model: Optional[str] = None,
     max_steps: Optional[int] = None,
+    natural_scroll: Optional[bool] = None,
     verbose: bool = True
 ):
     """
@@ -46,6 +48,7 @@ def interactive_mode(
     Args:
         model: 模型名称
         max_steps: 最大执行步数
+        natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
     """
     print_banner()
@@ -62,6 +65,7 @@ def interactive_mode(
         agent = ComputerUseAgent(
             model=model,
             max_steps=max_steps,
+            natural_scroll=natural_scroll,
             verbose=verbose
         )
     except Exception as e:
@@ -108,6 +112,7 @@ def single_task_mode(
     instruction: str,
     model: Optional[str] = None,
     max_steps: Optional[int] = None,
+    natural_scroll: Optional[bool] = None,
     verbose: bool = True
 ) -> Dict[str, Any]:
     """
@@ -117,6 +122,7 @@ def single_task_mode(
         instruction: 任务指令
         model: 模型名称
         max_steps: 最大执行步数
+        natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
         
     Returns:
@@ -133,6 +139,7 @@ def single_task_mode(
     agent = ComputerUseAgent(
         model=model,
         max_steps=max_steps,
+        natural_scroll=natural_scroll,
         verbose=verbose
     )
     
@@ -200,6 +207,18 @@ def main():
         '--screenshot-dir',
         help='截图保存目录'
     )
+
+    scroll_group = parser.add_mutually_exclusive_group()
+    scroll_group.add_argument(
+        '--natural-scroll',
+        action='store_true',
+        help='启用自然滚动方向'
+    )
+    scroll_group.add_argument(
+        '--traditional-scroll',
+        action='store_true',
+        help='启用传统滚动方向'
+    )
     
     parser.add_argument(
         '--quiet',
@@ -229,6 +248,11 @@ def main():
     
     # 确定运行模式
     verbose = not args.quiet
+    natural_scroll = None
+    if args.natural_scroll:
+        natural_scroll = True
+    elif args.traditional_scroll:
+        natural_scroll = False
     
     try:
         if args.instruction:
@@ -237,6 +261,7 @@ def main():
                 instruction=args.instruction,
                 model=args.model,
                 max_steps=args.max_steps,
+                natural_scroll=natural_scroll,
                 verbose=verbose
             )
             
@@ -247,6 +272,7 @@ def main():
             interactive_mode(
                 model=args.model,
                 max_steps=args.max_steps,
+                natural_scroll=natural_scroll,
                 verbose=verbose
             )
     

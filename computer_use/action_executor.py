@@ -6,9 +6,11 @@
 import re
 import sys
 import time
-from typing import Dict, Any, List, Tuple, Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 
 import pyautogui
+
+from .config import config
 
 
 class ActionExecutor:
@@ -20,7 +22,8 @@ class ActionExecutor:
         image_height: int,
         scale_factor: int = 1000,
         verbose: bool = True,
-        input_swap: bool = True
+        input_swap: bool = True,
+        natural_scroll: Optional[bool] = None
     ):
         """
         初始化执行器
@@ -31,12 +34,16 @@ class ActionExecutor:
             scale_factor: 坐标缩放比例
             verbose: 是否打印详细日志
             input_swap: 是否使用剪贴板输入长文本
+            natural_scroll: 是否使用自然滚动方向
         """
         self.image_width = image_width
         self.image_height = image_height
         self.scale_factor = scale_factor
         self.verbose = verbose
         self.input_swap = input_swap
+        self.natural_scroll = (
+            config.natural_scroll if natural_scroll is None else natural_scroll
+        )
         
         # 配置 pyautogui
         pyautogui.FAILSAFE = True
@@ -309,8 +316,11 @@ class ActionExecutor:
         
         # 确定滚动方向和次数
         scroll_amount = 500
-        if 'down' in direction or 'right' in direction:
-            scroll_amount = -scroll_amount
+        reverse_direction = 'up' in direction or 'left' in direction
+        if self.natural_scroll:
+            scroll_amount = scroll_amount if reverse_direction else -scroll_amount
+        else:
+            scroll_amount = -scroll_amount if reverse_direction else scroll_amount
         
         if start_box is not None:
             # 在指定位置滚动

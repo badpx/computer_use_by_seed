@@ -117,6 +117,7 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         executor = self.action_executor.ActionExecutor(
             image_width=1000,
             image_height=1000,
+            natural_scroll=False,
             verbose=False,
         )
 
@@ -132,6 +133,28 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
 
         self.assertEqual(self.fake_pyautogui.move_to_calls, [((498, 558), {})])
         self.assertEqual(self.fake_pyautogui.scroll_calls, [((500,), {})])
+        self.assertEqual(result, '滚动down: (498, 558)')
+
+    def test_scroll_respects_natural_scroll_setting(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=1000,
+            image_height=1000,
+            natural_scroll=True,
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'scroll',
+                'action_inputs': {
+                    'direction': 'down',
+                    'start_box': [498, 558],
+                },
+            }
+        )
+
+        self.assertEqual(self.fake_pyautogui.move_to_calls, [((498, 558), {})])
+        self.assertEqual(self.fake_pyautogui.scroll_calls, [((-500,), {})])
         self.assertEqual(result, '滚动down: (498, 558)')
 
 

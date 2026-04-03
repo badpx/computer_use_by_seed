@@ -31,6 +31,7 @@ class ComputerUseAgent:
         base_url: Optional[str] = None,
         temperature: Optional[float] = None,
         max_steps: Optional[int] = None,
+        natural_scroll: Optional[bool] = None,
         save_context_log: Optional[bool] = None,
         context_log_dir: Optional[str] = None,
         language: str = 'Chinese',
@@ -45,6 +46,7 @@ class ComputerUseAgent:
             base_url: API基础URL，默认从配置读取
             temperature: 温度参数，默认从配置读取
             max_steps: 最大执行步数，默认从配置读取
+            natural_scroll: 是否使用自然滚动
             save_context_log: 是否保存上下文日志
             context_log_dir: 上下文日志目录
             language: 提示词语言
@@ -56,6 +58,9 @@ class ComputerUseAgent:
         self.base_url = base_url or config.base_url
         self.temperature = temperature if temperature is not None else config.temperature
         self.max_steps = max_steps if max_steps is not None else config.max_steps
+        self.natural_scroll = (
+            natural_scroll if natural_scroll is not None else config.natural_scroll
+        )
         self.save_context_log = (
             save_context_log if save_context_log is not None else config.save_context_log
         )
@@ -88,6 +93,7 @@ class ComputerUseAgent:
             print(f"[初始化] Computer Use Agent")
             print(f"  模型: {self.model}")
             print(f"  最大步数: {self.max_steps}")
+            print(f"  自然滚动: {'启用' if self.natural_scroll else '禁用'}")
             print(f"  上下文日志: {'启用' if self.save_context_log else '禁用'}")
             print(f"  语言: {self.language}")
     
@@ -261,7 +267,8 @@ class ComputerUseAgent:
                     image_width=img_width,
                     image_height=img_height,
                     scale_factor=config.coordinate_scale,
-                    verbose=self.verbose
+                    verbose=self.verbose,
+                    natural_scroll=self.natural_scroll,
                 )
                 
                 try:

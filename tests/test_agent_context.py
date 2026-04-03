@@ -58,6 +58,7 @@ class AgentContextTests(unittest.TestCase):
         self.responses = []
         self.calls = []
         self.exec_outcomes = []
+        self.executor_inits = []
         self.capture_index = 0
         self.log_dir = Path(self.temp_dir.name) / 'logs'
         self.screenshot_dir = Path(self.temp_dir.name) / 'screens'
@@ -124,7 +125,7 @@ class AgentContextTests(unittest.TestCase):
 
         class FakeExecutor:
             def __init__(self, *args, **kwargs):
-                pass
+                test_case.executor_inits.append(kwargs)
 
             def execute(self, action):
                 if not test_case.exec_outcomes:
@@ -303,6 +304,21 @@ class AgentContextTests(unittest.TestCase):
 
         model_response = next(record for record in records if record['event'] == 'model_response')
         self.assertIsNone(model_response['usage'])
+
+    def test_agent_passes_natural_scroll_override_to_executor(self):
+        self.responses[:] = [
+            "Thought: scroll\nAction: scroll(direction='down', start_box='<point>500 500</point>')",
+            "Thought: done\nAction: finished(content='ok')",
+        ]
+        self.exec_outcomes[:] = ['scrolled']
+
+        agent = self._make_agent(max_steps=2)
+        agent.natural_scroll = False
+        result = agent.run('Use traditional scroll')
+
+        self.assertTrue(result['success'])
+        self.assertTrue(self.executor_inits)
+        self.assertEqual(self.executor_inits[0]['natural_scroll'], False)
 
 
 if __name__ == '__main__':

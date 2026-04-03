@@ -4,6 +4,8 @@
 """
 
 import os
+import subprocess
+import sys
 from typing import Optional
 from pathlib import Path
 
@@ -17,6 +19,7 @@ class Config:
         'ARK_BASE_URL': 'http://ark.cn-beijing.volces.com/api/v3',
         'SCREENSHOT_DIR': './screenshots',
         'SAVE_SCREENSHOT': 'true',
+        'NATURAL_SCROLL': '',
         'CONTEXT_LOG_DIR': './logs',
         'SAVE_CONTEXT_LOG': 'true',
         'MAX_STEPS': '20',
@@ -101,6 +104,21 @@ class Config:
         """获取布尔类型配置项"""
         value = self._config.get(key, str(default).lower())
         return value.lower() in ('true', '1', 'yes', 'on')
+
+    def get_optional_bool(self, key: str) -> Optional[bool]:
+        """获取可选布尔配置项，未设置时返回 None。"""
+        value = self._config.get(key)
+        if value is None:
+            return None
+
+        value = str(value).strip().lower()
+        if value == '':
+            return None
+        if value in ('true', '1', 'yes', 'on'):
+            return True
+        if value in ('false', '0', 'no', 'off'):
+            return False
+        return None
     
     def get_int(self, key: str, default: int = 0) -> int:
         """获取整数类型配置项"""
@@ -152,6 +170,14 @@ class Config:
         return self._config.get('SCREENSHOT_DIR', self.DEFAULTS['SCREENSHOT_DIR'])
 
     @property
+    def natural_scroll(self) -> bool:
+        """是否使用自然滚动方向。"""
+        configured = self.get_optional_bool('NATURAL_SCROLL')
+        if configured is not None:
+            return configured
+        return self._detect_natural_scroll()
+
+    @property
     def save_context_log(self) -> bool:
         """是否保存上下文日志"""
         return self.get_bool('SAVE_CONTEXT_LOG', True)
@@ -165,6 +191,22 @@ class Config:
     def coordinate_scale(self) -> int:
         """坐标缩放比例"""
         return self.get_int('COORDINATE_SCALE', 1000)
+
+    def _detect_natural_scroll(self) -> bool:
+        """自动检测系统滚动方向设置。"""
+        if sys.platform != 'darwin':
+            return False
+
+        try:
+            result = subprocess.run(
+                ['defaults', 'read', '-g', 'com.apple.swipescrolldirection'],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip() == '1'
+        except Exception:
+            return True
 
 
 # 全局配置实例

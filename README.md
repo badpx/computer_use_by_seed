@@ -95,6 +95,7 @@ python -m computer_use "打开浏览器"
 | 最大步数 | `MAX_STEPS` | `20` | 最大执行步数 |
 | 保存截图 | `SAVE_SCREENSHOT` | `true` | 是否保存截图 |
 | 截图目录 | `SCREENSHOT_DIR` | `./screenshots` | 截图保存目录 |
+| 自然滚动 | `NATURAL_SCROLL` | 自动检测 | 是否按系统自然滚动方向解释 scroll 偏移 |
 | 保存上下文日志 | `SAVE_CONTEXT_LOG` | `true` | 是否保存每任务 JSONL 调试日志 |
 | 日志目录 | `CONTEXT_LOG_DIR` | `./logs` | 上下文日志保存目录 |
 
@@ -113,6 +114,9 @@ MAX_STEPS=20
 # 截图配置
 SAVE_SCREENSHOT=true
 SCREENSHOT_DIR=./screenshots
+
+# 滚动方向；留空时自动检测系统设置
+NATURAL_SCROLL=
 
 # 调试日志配置
 SAVE_CONTEXT_LOG=true
@@ -156,6 +160,8 @@ python -m computer_use [指令] [选项]
 | `--max-steps` | `-s` | 指定最大执行步数 |
 | `--no-screenshot` | - | 禁用截图保存 |
 | `--screenshot-dir` | - | 指定截图保存目录 |
+| `--natural-scroll` | - | 显式启用自然滚动 |
+| `--traditional-scroll` | - | 显式启用传统滚动 |
 | `--quiet` | `-q` | 安静模式，减少输出 |
 | `--version` | `-v` | 显示版本信息 |
 | `--help` | `-h` | 显示帮助信息 |
@@ -177,6 +183,9 @@ python -m computer_use "搜索 Python 教程" --max-steps 10
 
 # 禁用截图保存
 python -m computer_use "打开计算器" --no-screenshot
+
+# 强制使用传统滚动
+python -m computer_use "浏览网页" --traditional-scroll
 
 # 安静模式
 python -m computer_use "打开记事本" --quiet
