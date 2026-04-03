@@ -18,7 +18,7 @@ class Config:
         'ARK_MODEL': 'doubao-seed-1-6-vision-250815',
         'ARK_BASE_URL': 'http://ark.cn-beijing.volces.com/api/v3',
         'SCREENSHOT_DIR': './screenshots',
-        'SAVE_SCREENSHOT': 'true',
+        'SAVE_SCREENSHOT': 'false',
         'NATURAL_SCROLL': '',
         'CONTEXT_LOG_DIR': './logs',
         'SAVE_CONTEXT_LOG': 'true',
@@ -162,7 +162,7 @@ class Config:
     @property
     def save_screenshot(self) -> bool:
         """是否保存截图"""
-        return self.get_bool('SAVE_SCREENSHOT', True)
+        return self.get_bool('SAVE_SCREENSHOT', False)
     
     @property
     def screenshot_dir(self) -> str:

@@ -66,8 +66,10 @@ def print_config_info():
     print(f"  模型: {config.model}")
     print(f"  API地址: {config.base_url}")
     print(f"  最大步数: {config.max_steps}")
-    print(f"  保存截图: {'是' if config.save_screenshot else '否'}")
-    print(f"  截图目录: {config.screenshot_dir}")
+    save_screenshot = config.save_screenshot
+    print(f"  保存截图: {'是' if save_screenshot else '否'}")
+    if save_screenshot:
+        print(f"  截图目录: {config.screenshot_dir}")
     print(f"  自然滚动: {'是' if config.natural_scroll else '否'}")
     print(f"  上下文日志: {'是' if config.save_context_log else '否'}")
     print(f"  日志目录: {config.context_log_dir}")
@@ -253,14 +255,20 @@ def main():
     )
     
     parser.add_argument(
+        '--screenshot-dir',
+        help='截图保存目录'
+    )
+
+    screenshot_group = parser.add_mutually_exclusive_group()
+    screenshot_group.add_argument(
+        '--save-screenshot',
+        action='store_true',
+        help='启用截图保存'
+    )
+    screenshot_group.add_argument(
         '--no-screenshot',
         action='store_true',
         help='禁用截图保存'
-    )
-    
-    parser.add_argument(
-        '--screenshot-dir',
-        help='截图保存目录'
     )
 
     scroll_group = parser.add_mutually_exclusive_group()
@@ -293,7 +301,10 @@ def main():
     args = parser.parse_args()
     
     # 处理截图配置
-    if args.no_screenshot:
+    if args.save_screenshot:
+        import os
+        os.environ['SAVE_SCREENSHOT'] = 'true'
+    elif args.no_screenshot:
         import os
         os.environ['SAVE_SCREENSHOT'] = 'false'
     

@@ -102,7 +102,7 @@ python -m computer_use "打开浏览器"
 | API 地址 | `ARK_BASE_URL` | `http://ark.cn-beijing.volces.com/api/v3` | API 基础 URL |
 | 温度参数 | `TEMPERATURE` | `0.0` | 模型温度参数 |
 | 最大步数 | `MAX_STEPS` | `20` | 最大执行步数 |
-| 保存截图 | `SAVE_SCREENSHOT` | `true` | 是否保存截图 |
+| 保存截图 | `SAVE_SCREENSHOT` | `false` | 是否保存截图 |
 | 截图目录 | `SCREENSHOT_DIR` | `./screenshots` | 截图保存目录 |
 | 自然滚动 | `NATURAL_SCROLL` | 自动检测 | 是否按系统自然滚动方向解释 scroll 偏移 |
 | 保存上下文日志 | `SAVE_CONTEXT_LOG` | `true` | 是否保存每任务 JSONL 调试日志 |
@@ -121,7 +121,7 @@ TEMPERATURE=0.0
 MAX_STEPS=20
 
 # 截图配置
-SAVE_SCREENSHOT=true
+SAVE_SCREENSHOT=false
 SCREENSHOT_DIR=./screenshots
 
 # 滚动方向；留空时自动检测系统设置
@@ -147,7 +147,7 @@ CONTEXT_LOG_DIR=./logs
 - 每轮执行结果
 - 每轮失败原因
 
-历史截图不会回传给模型，也不会重复注入 system 提示词；如果启用了截图保存和上下文日志，本地会保留截图路径、尺寸以及每轮模型上下文，方便调试。
+历史截图不会回传给模型，也不会重复注入 system 提示词；截图保存默认关闭，如果通过配置或 CLI 显式启用，本地会保留截图路径、尺寸以及每轮模型上下文，方便调试。
 
 ## CLI 参数
 
@@ -167,6 +167,7 @@ python -m computer_use [指令] [选项]
 |------|------|------|
 | `--model` | `-m` | 指定模型名称 |
 | `--max-steps` | `-s` | 指定最大执行步数 |
+| `--save-screenshot` | - | 启用截图保存 |
 | `--no-screenshot` | - | 禁用截图保存 |
 | `--screenshot-dir` | - | 指定截图保存目录 |
 | `--natural-scroll` | - | 显式启用自然滚动 |
@@ -190,8 +191,8 @@ python -m computer_use "打开微信" --model doubao-seed-1-6-vision-250815
 # 指定最大步数
 python -m computer_use "搜索 Python 教程" --max-steps 10
 
-# 禁用截图保存
-python -m computer_use "打开计算器" --no-screenshot
+# 启用截图保存
+python -m computer_use "打开计算器" --save-screenshot
 
 # 强制使用传统滚动
 python -m computer_use "浏览网页" --traditional-scroll
