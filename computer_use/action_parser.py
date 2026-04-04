@@ -188,7 +188,7 @@ class ActionParser:
                             params['end_box'] = value
                             continue
 
-                if key in {'x', 'y'}:
+                if key in {'x', 'y', 'steps'}:
                     try:
                         value = float(value)
                     except ValueError:

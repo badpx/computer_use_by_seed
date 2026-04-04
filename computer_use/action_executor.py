@@ -332,9 +332,10 @@ class ActionExecutor:
         """执行滚动操作"""
         start_box = action_inputs.get('start_box')
         direction = action_inputs.get('direction', 'down').lower()
+        steps = action_inputs.get('steps', 50)
         
         # 确定滚动方向和次数
-        scroll_amount = 500
+        scroll_amount = int(abs(float(steps)))
         reverse_direction = 'up' in direction or 'left' in direction
         if self.natural_scroll:
             scroll_amount = scroll_amount if reverse_direction else -scroll_amount
@@ -346,11 +347,11 @@ class ActionExecutor:
             x, y = self._get_coordinates_from_box(start_box)
             pyautogui.moveTo(x, y)
             pyautogui.scroll(scroll_amount)
-            result = f"滚动{direction}: ({x}, {y})"
+            result = f"滚动{direction} {abs(scroll_amount)}步: ({x}, {y})"
         else:
             # 在当前位置滚动
             pyautogui.scroll(scroll_amount)
-            result = f"滚动{direction}"
+            result = f"滚动{direction} {abs(scroll_amount)}步"
         
         if self.verbose:
             print(f"  [完成] {result}")

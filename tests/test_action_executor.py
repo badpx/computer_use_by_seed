@@ -128,14 +128,15 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
                 'action_type': 'scroll',
                 'action_inputs': {
                     'direction': 'down',
+                    'steps': 50,
                     'start_box': [498, 558],
                 },
             }
         )
 
         self.assertEqual(self.fake_pyautogui.move_to_calls, [((498, 558), {})])
-        self.assertEqual(self.fake_pyautogui.scroll_calls, [((500,), {})])
-        self.assertEqual(result, '滚动down: (498, 558)')
+        self.assertEqual(self.fake_pyautogui.scroll_calls, [((50,), {})])
+        self.assertEqual(result, '滚动down 50步: (498, 558)')
 
     def test_scroll_respects_natural_scroll_setting(self):
         executor = self.action_executor.ActionExecutor(
@@ -151,14 +152,37 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
                 'action_type': 'scroll',
                 'action_inputs': {
                     'direction': 'down',
+                    'steps': 50,
                     'start_box': [498, 558],
                 },
             }
         )
 
         self.assertEqual(self.fake_pyautogui.move_to_calls, [((498, 558), {})])
-        self.assertEqual(self.fake_pyautogui.scroll_calls, [((-500,), {})])
-        self.assertEqual(result, '滚动down: (498, 558)')
+        self.assertEqual(self.fake_pyautogui.scroll_calls, [((-50,), {})])
+        self.assertEqual(result, '滚动down 50步: (498, 558)')
+
+    def test_scroll_uses_model_provided_steps(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=1000,
+            image_height=1000,
+            coordinate_space='pixel',
+            natural_scroll=False,
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'scroll',
+                'action_inputs': {
+                    'direction': 'up',
+                    'steps': 7,
+                },
+            }
+        )
+
+        self.assertEqual(self.fake_pyautogui.scroll_calls, [((-7,), {})])
+        self.assertEqual(result, '滚动up 7步')
 
     def test_left_double_uses_two_clicks_with_interval(self):
         executor = self.action_executor.ActionExecutor(
