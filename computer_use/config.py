@@ -9,6 +9,55 @@ import sys
 from typing import Optional
 from pathlib import Path
 
+THINKING_MODES = ('enabled', 'disabled', 'auto')
+REASONING_EFFORTS = ('minimal', 'low', 'medium', 'high')
+
+
+def normalize_thinking_mode(
+    thinking_mode: Optional[str],
+    default: str = 'auto',
+) -> str:
+    """标准化思考模式。"""
+    mode = str(thinking_mode or default).strip().lower()
+    if mode in THINKING_MODES:
+        return mode
+    return default
+
+
+def normalize_reasoning_effort(
+    reasoning_effort: Optional[str],
+    default: str = 'medium',
+) -> str:
+    """标准化思考档位。"""
+    effort = str(reasoning_effort or default).strip().lower()
+    if effort in REASONING_EFFORTS:
+        return effort
+    return default
+
+
+def resolve_thinking_settings(
+    thinking_mode: Optional[str],
+    reasoning_effort: Optional[str],
+    reasoning_effort_explicit: bool = False,
+) -> tuple[str, str]:
+    """根据思考模式和思考档位，计算最终请求参数。"""
+    normalized_mode = normalize_thinking_mode(thinking_mode)
+    normalized_effort = normalize_reasoning_effort(reasoning_effort)
+
+    if normalized_mode == 'disabled':
+        if not reasoning_effort_explicit:
+            return 'disabled', 'minimal'
+        if normalized_effort != 'minimal':
+            raise ValueError(
+                "当 thinking_mode=disabled 时，reasoning_effort 只能为 minimal"
+            )
+        return 'disabled', 'minimal'
+
+    if normalized_effort == 'minimal':
+        return 'disabled', 'minimal'
+
+    return normalized_mode, normalized_effort
+
 
 class Config:
     """配置类，支持多层级配置加载"""
@@ -24,6 +73,8 @@ class Config:
         'SAVE_CONTEXT_LOG': 'true',
         'MAX_STEPS': '20',
         'TEMPERATURE': '0.0',
+        'THINKING_MODE': 'auto',
+        'REASONING_EFFORT': 'medium',
         'COORDINATE_SCALE': '1000',
         'MAX_PIXELS': '12845056',  # 16384 * 28 * 28
         'MIN_PIXELS': '78400',     # 100 * 28 * 28
@@ -35,6 +86,7 @@ class Config:
     def __init__(self):
         """初始化配置"""
         self._config = {}
+        self._explicit_keys = set()
         self._load()
     
     def _load(self):
@@ -69,7 +121,9 @@ class Config:
                             continue
                         if '=' in line:
                             key, value = line.split('=', 1)
-                            self._config[key.strip()] = value.strip()
+                            normalized_key = key.strip()
+                            self._config[normalized_key] = value.strip()
+                            self._explicit_keys.add(normalized_key)
                 break
     
     def _load_from_env(self):
@@ -78,6 +132,7 @@ class Config:
             env_value = os.getenv(key)
             if env_value is not None:
                 self._config[key] = env_value
+                self._explicit_keys.add(key)
     
     def _validate(self):
         """验证必需配置项"""
@@ -99,6 +154,10 @@ class Config:
     def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """获取配置项"""
         return self._config.get(key, default)
+
+    def has_explicit_value(self, key: str) -> bool:
+        """判断配置项是否由环境变量或配置文件显式设置。"""
+        return key in self._explicit_keys
     
     def get_bool(self, key: str, default: bool = False) -> bool:
         """获取布尔类型配置项"""
@@ -191,6 +250,22 @@ class Config:
     def coordinate_scale(self) -> int:
         """坐标缩放比例"""
         return self.get_int('COORDINATE_SCALE', 1000)
+
+    @property
+    def thinking_mode(self) -> str:
+        """方舟思考模式：enabled / disabled / auto。"""
+        return normalize_thinking_mode(
+            self._config.get('THINKING_MODE'),
+            default=self.DEFAULTS['THINKING_MODE'],
+        )
+
+    @property
+    def reasoning_effort(self) -> str:
+        """方舟思考档位：minimal / low / medium / high。"""
+        return normalize_reasoning_effort(
+            self._config.get('REASONING_EFFORT'),
+            default=self.DEFAULTS['REASONING_EFFORT'],
+        )
 
     def _detect_natural_scroll(self) -> bool:
         """自动检测系统滚动方向设置。"""

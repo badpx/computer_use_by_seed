@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .compat import ensure_supported_python
-from .config import config
+from .config import config, resolve_thinking_settings
 
 
 DEFAULT_HISTORY_FILE = Path.home() / '.computer_use_history'
@@ -60,12 +60,25 @@ def print_banner():
     print(banner)
 
 
-def print_config_info():
+def print_config_info(
+    thinking_mode: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
+):
     """打印配置信息"""
+    reasoning_effort_explicit = (
+        reasoning_effort is not None or config.has_explicit_value('REASONING_EFFORT')
+    )
+    effective_thinking_mode, effective_reasoning_effort = resolve_thinking_settings(
+        thinking_mode or config.thinking_mode,
+        reasoning_effort or config.reasoning_effort,
+        reasoning_effort_explicit=reasoning_effort_explicit,
+    )
     print("[配置信息]")
     print(f"  模型: {config.model}")
     print(f"  API地址: {config.base_url}")
     print(f"  最大步数: {config.max_steps}")
+    print(f"  思考模式: {effective_thinking_mode}")
+    print(f"  思考档位: {effective_reasoning_effort}")
     save_screenshot = config.save_screenshot
     print(f"  保存截图: {'是' if save_screenshot else '否'}")
     if save_screenshot:
@@ -79,6 +92,8 @@ def print_config_info():
 def interactive_mode(
     model: Optional[str] = None,
     max_steps: Optional[int] = None,
+    thinking_mode: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
     natural_scroll: Optional[bool] = None,
     verbose: bool = True
 ):
@@ -88,11 +103,16 @@ def interactive_mode(
     Args:
         model: 模型名称
         max_steps: 最大执行步数
+        thinking_mode: 方舟思考模式
+        reasoning_effort: 方舟思考档位
         natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
     """
     print_banner()
-    print_config_info()
+    print_config_info(
+        thinking_mode=thinking_mode,
+        reasoning_effort=reasoning_effort,
+    )
     
     print("[交互模式]")
     print("请输入您的指令（输入 'quit' 或 'exit' 退出）\n")
@@ -110,6 +130,8 @@ def interactive_mode(
         agent = ComputerUseAgent(
             model=model,
             max_steps=max_steps,
+            thinking_mode=thinking_mode,
+            reasoning_effort=reasoning_effort,
             natural_scroll=natural_scroll,
             verbose=verbose
         )
@@ -163,6 +185,8 @@ def single_task_mode(
     instruction: str,
     model: Optional[str] = None,
     max_steps: Optional[int] = None,
+    thinking_mode: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
     natural_scroll: Optional[bool] = None,
     verbose: bool = True
 ) -> Dict[str, Any]:
@@ -173,6 +197,8 @@ def single_task_mode(
         instruction: 任务指令
         model: 模型名称
         max_steps: 最大执行步数
+        thinking_mode: 方舟思考模式
+        reasoning_effort: 方舟思考档位
         natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
         
@@ -190,6 +216,8 @@ def single_task_mode(
     agent = ComputerUseAgent(
         model=model,
         max_steps=max_steps,
+        thinking_mode=thinking_mode,
+        reasoning_effort=reasoning_effort,
         natural_scroll=natural_scroll,
         verbose=verbose
     )
@@ -253,6 +281,20 @@ def main():
         type=int,
         help='最大执行步数（默认从配置读取）'
     )
+
+    parser.add_argument(
+        '--thinking',
+        '-t',
+        choices=['enabled', 'disabled', 'auto'],
+        help='设置方舟思考模式：enabled / disabled / auto（默认从配置读取）'
+    )
+
+    parser.add_argument(
+        '--reasoning-effort',
+        '-r',
+        choices=['minimal', 'low', 'medium', 'high'],
+        help='设置方舟思考档位：minimal / low / medium / high（默认从配置读取）'
+    )
     
     parser.add_argument(
         '--screenshot-dir',
@@ -315,10 +357,17 @@ def main():
     # 确定运行模式
     verbose = not args.quiet
     natural_scroll = None
+    thinking_mode = None
+    reasoning_effort = None
     if args.natural_scroll:
         natural_scroll = True
     elif args.traditional_scroll:
         natural_scroll = False
+
+    if args.thinking:
+        thinking_mode = args.thinking
+    if args.reasoning_effort:
+        reasoning_effort = args.reasoning_effort
     
     try:
         if args.instruction:
@@ -327,6 +376,8 @@ def main():
                 instruction=args.instruction,
                 model=args.model,
                 max_steps=args.max_steps,
+                thinking_mode=thinking_mode,
+                reasoning_effort=reasoning_effort,
                 natural_scroll=natural_scroll,
                 verbose=verbose
             )
@@ -338,6 +389,8 @@ def main():
             interactive_mode(
                 model=args.model,
                 max_steps=args.max_steps,
+                thinking_mode=thinking_mode,
+                reasoning_effort=reasoning_effort,
                 natural_scroll=natural_scroll,
                 verbose=verbose
             )

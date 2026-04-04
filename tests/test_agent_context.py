@@ -23,8 +23,11 @@ class FakeScreenshot:
 
 
 class FakeResponse:
-    def __init__(self, content, usage=None):
-        message = types.SimpleNamespace(content=content)
+    def __init__(self, content, usage=None, reasoning_content=None):
+        message = types.SimpleNamespace(
+            content=content,
+            reasoning_content=reasoning_content,
+        )
         self.choices = [types.SimpleNamespace(message=message)]
         self.usage = usage
 
@@ -40,7 +43,11 @@ class FakeCompletionAPI:
             raise AssertionError('No fake model responses left')
         item = self._responses.pop(0)
         if isinstance(item, dict):
-            return FakeResponse(item['content'], usage=item.get('usage'))
+            return FakeResponse(
+                item['content'],
+                usage=item.get('usage'),
+                reasoning_content=item.get('reasoning_content'),
+            )
         return FakeResponse(item)
 
 
@@ -217,6 +224,7 @@ class AgentContextTests(unittest.TestCase):
         self.responses[:] = [
             {
                 'content': "Thought: done\nAction: finished(content='ok')",
+                'reasoning_content': 'deep reasoning trace',
                 'usage': usage,
             }
         ]
@@ -257,6 +265,7 @@ class AgentContextTests(unittest.TestCase):
                 'completion_tokens_details': {'reasoning_tokens': 7},
             },
         )
+        self.assertEqual(model_response['reasoning'], 'deep reasoning trace')
 
     def test_parse_failure_prints_basic_error_detail(self):
         self.responses[:] = ['this is not a valid action']
@@ -304,6 +313,7 @@ class AgentContextTests(unittest.TestCase):
 
         model_response = next(record for record in records if record['event'] == 'model_response')
         self.assertIsNone(model_response['usage'])
+        self.assertEqual(model_response['reasoning'], '')
 
     def test_agent_passes_natural_scroll_override_to_executor(self):
         self.responses[:] = [
@@ -319,6 +329,42 @@ class AgentContextTests(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertTrue(self.executor_inits)
         self.assertEqual(self.executor_inits[0]['natural_scroll'], False)
+
+    def test_agent_passes_reasoning_effort_and_thinking_to_chat_api(self):
+        self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
+
+        agent = self._make_agent(
+            thinking_mode='enabled',
+            reasoning_effort='low',
+        )
+        result = agent.run('Use low reasoning effort')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(self.calls[0]['thinking'], {'type': 'enabled'})
+        self.assertEqual(self.calls[0]['reasoning_effort'], 'low')
+
+    def test_minimal_reasoning_effort_forces_disabled_thinking(self):
+        self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
+
+        agent = self._make_agent(
+            thinking_mode='enabled',
+            reasoning_effort='minimal',
+        )
+        result = agent.run('Use minimal reasoning effort')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(self.calls[0]['thinking'], {'type': 'disabled'})
+        self.assertEqual(self.calls[0]['reasoning_effort'], 'minimal')
+
+    def test_disabled_thinking_rejects_non_minimal_reasoning_effort(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            'reasoning_effort 只能为 minimal',
+        ):
+            self._make_agent(
+                thinking_mode='disabled',
+                reasoning_effort='high',
+            )
 
 
 if __name__ == '__main__':

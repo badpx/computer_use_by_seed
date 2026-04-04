@@ -101,6 +101,8 @@ python -m computer_use "打开浏览器"
 | 模型名称 | `ARK_MODEL` | `doubao-seed-1-6-vision-250815` | 使用的模型 |
 | API 地址 | `ARK_BASE_URL` | `http://ark.cn-beijing.volces.com/api/v3` | API 基础 URL |
 | 温度参数 | `TEMPERATURE` | `0.0` | 模型温度参数 |
+| 思考模式 | `THINKING_MODE` | `auto` | 方舟思考模式，可选 `enabled` / `disabled` / `auto` |
+| 思考档位 | `REASONING_EFFORT` | `medium` | 方舟思考档位，可选 `minimal` / `low` / `medium` / `high` |
 | 最大步数 | `MAX_STEPS` | `20` | 最大执行步数 |
 | 保存截图 | `SAVE_SCREENSHOT` | `false` | 是否保存截图 |
 | 截图目录 | `SCREENSHOT_DIR` | `./screenshots` | 截图保存目录 |
@@ -118,6 +120,8 @@ ARK_API_KEY=your_api_key_here
 ARK_MODEL=doubao-seed-1-6-vision-250815
 ARK_BASE_URL=http://ark.cn-beijing.volces.com/api/v3
 TEMPERATURE=0.0
+THINKING_MODE=auto
+REASONING_EFFORT=medium
 MAX_STEPS=20
 
 # 截图配置
@@ -167,6 +171,8 @@ python -m computer_use [指令] [选项]
 |------|------|------|
 | `--model` | `-m` | 指定模型名称 |
 | `--max-steps` | `-s` | 指定最大执行步数 |
+| `--thinking <mode>` | `-t` | 设置方舟思考模式，取值 `enabled` / `disabled` / `auto` |
+| `--reasoning-effort <level>` | `-r` | 设置方舟思考档位，取值 `minimal` / `low` / `medium` / `high` |
 | `--save-screenshot` | - | 启用截图保存 |
 | `--no-screenshot` | - | 禁用截图保存 |
 | `--screenshot-dir` | - | 指定截图保存目录 |
@@ -190,6 +196,15 @@ python -m computer_use "打开微信" --model doubao-seed-1-6-vision-250815
 
 # 指定最大步数
 python -m computer_use "搜索 Python 教程" --max-steps 10
+
+# 显式启用思考模式
+python -m computer_use "分析这个页面并给出下一步操作" --thinking enabled
+
+# 使用短参数并禁用思考
+python -m computer_use "打开浏览器" -t disabled
+
+# 设置低档位思考
+python -m computer_use "总结这个页面" -t enabled -r low
 
 # 启用截图保存
 python -m computer_use "打开计算器" --save-screenshot

@@ -26,7 +26,9 @@ class ContextLogger:
         instruction: str,
         model: str,
         max_steps: int,
-        temperature: float
+        temperature: float,
+        thinking_mode: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> Optional[str]:
         """开始一个新任务并创建日志文件。"""
         if not self.enabled:
@@ -42,6 +44,8 @@ class ContextLogger:
             model=model,
             max_steps=max_steps,
             temperature=temperature,
+            thinking_mode=thinking_mode,
+            reasoning_effort=reasoning_effort,
         )
 
         return self.task_id

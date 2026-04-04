@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 
 from volcenginesdkarkruntime import Ark
 
-from .config import config
+from .config import config, resolve_thinking_settings
 from .screenshot import capture_screenshot
 from .action_parser import parse_action
 from .action_executor import ActionExecutor
@@ -30,6 +30,8 @@ class ComputerUseAgent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         temperature: Optional[float] = None,
+        thinking_mode: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         max_steps: Optional[int] = None,
         natural_scroll: Optional[bool] = None,
         save_context_log: Optional[bool] = None,
@@ -45,6 +47,8 @@ class ComputerUseAgent:
             api_key: API密钥，默认从配置读取
             base_url: API基础URL，默认从配置读取
             temperature: 温度参数，默认从配置读取
+            thinking_mode: 方舟思考模式，enabled / disabled / auto
+            reasoning_effort: 方舟思考档位，minimal / low / medium / high
             max_steps: 最大执行步数，默认从配置读取
             natural_scroll: 是否使用自然滚动
             save_context_log: 是否保存上下文日志
@@ -57,6 +61,18 @@ class ComputerUseAgent:
         self.api_key = api_key or config.api_key
         self.base_url = base_url or config.base_url
         self.temperature = temperature if temperature is not None else config.temperature
+        reasoning_effort_explicit = (
+            reasoning_effort is not None or config.has_explicit_value('REASONING_EFFORT')
+        )
+        self.requested_thinking_mode = thinking_mode or config.thinking_mode
+        self.requested_reasoning_effort = (
+            reasoning_effort or config.reasoning_effort
+        )
+        self.thinking_mode, self.reasoning_effort = resolve_thinking_settings(
+            self.requested_thinking_mode,
+            self.requested_reasoning_effort,
+            reasoning_effort_explicit=reasoning_effort_explicit,
+        )
         self.max_steps = max_steps if max_steps is not None else config.max_steps
         self.natural_scroll = (
             natural_scroll if natural_scroll is not None else config.natural_scroll
@@ -93,6 +109,8 @@ class ComputerUseAgent:
             print(f"[初始化] Computer Use Agent")
             print(f"  模型: {self.model}")
             print(f"  最大步数: {self.max_steps}")
+            print(f"  思考模式: {self.thinking_mode}")
+            print(f"  思考档位: {self.reasoning_effort}")
             print(f"  自然滚动: {'启用' if self.natural_scroll else '禁用'}")
             print(f"  上下文日志: {'启用' if self.save_context_log else '禁用'}")
             print(f"  语言: {self.language}")
@@ -137,6 +155,8 @@ class ComputerUseAgent:
             model=self.model,
             max_steps=self.max_steps,
             temperature=self.temperature,
+            thinking_mode=self.thinking_mode,
+            reasoning_effort=self.reasoning_effort,
         )
         result['context_log_path'] = self.context_logger.current_log_path
         
@@ -167,6 +187,8 @@ class ComputerUseAgent:
                     instruction=instruction,
                     step=self.current_step,
                     model=self.model,
+                    thinking_mode=self.thinking_mode,
+                    reasoning_effort=self.reasoning_effort,
                     text_input=text_input,
                     message_summary='1 system + text history + 1 current screenshot',
                     screenshot_path=screenshot_path,
@@ -182,6 +204,7 @@ class ComputerUseAgent:
                     'model_response',
                     instruction=instruction,
                     step=self.current_step,
+                    **self._build_logged_model_response(response_obj),
                     raw_response=response,
                     usage=self._extract_usage(response_obj),
                 )
@@ -483,7 +506,11 @@ class ComputerUseAgent:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=self.temperature
+            temperature=self.temperature,
+            thinking={
+                'type': self.thinking_mode,
+            },
+            reasoning_effort=self.reasoning_effort,
         )
         
         return response, response.choices[0].message.content
@@ -568,6 +595,21 @@ class ComputerUseAgent:
             for key, value in action_inputs.items()
         )
         return f'{action_type}({params})'
+
+    def _build_logged_model_response(self, response_obj: Any) -> Dict[str, str]:
+        """提取方舟响应中的 reasoning 字段用于日志记录。"""
+        message = None
+        choices = getattr(response_obj, 'choices', None) or []
+        if choices:
+            message = getattr(choices[0], 'message', None)
+
+        reasoning = ''
+        if message is not None:
+            reasoning = getattr(message, 'reasoning_content', '') or ''
+
+        return {
+            'reasoning': reasoning.strip(),
+        }
 
     def _format_parse_failure_reason(self, error: Exception, response: str) -> str:
         """将解析失败原因整理成简洁单行文本。"""
