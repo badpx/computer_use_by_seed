@@ -35,6 +35,7 @@ class ComputerUseAgent:
         reasoning_effort: Optional[str] = None,
         coordinate_space: Optional[str] = None,
         coordinate_scale: Optional[float] = None,
+        screenshot_size: Optional[int] = None,
         max_context_screenshots: Optional[int] = None,
         include_execution_feedback: Optional[bool] = None,
         log_full_messages: bool = False,
@@ -57,6 +58,7 @@ class ComputerUseAgent:
             reasoning_effort: 方舟思考档位，minimal / low / medium / high
             coordinate_space: 坐标空间，relative / pixel
             coordinate_scale: 相对坐标量程
+            screenshot_size: 传给模型前的截图缩放尺寸，仅支持正方形
             max_context_screenshots: 多轮上下文中最多保留的截图数量（含当前轮）
             include_execution_feedback: 是否注入历史执行反馈
             log_full_messages: 是否在上下文日志中记录完整 messages
@@ -92,6 +94,11 @@ class ComputerUseAgent:
         )
         if self.coordinate_scale <= 0:
             raise ValueError("coordinate_scale 必须大于 0")
+        self.screenshot_size = (
+            config.screenshot_size if screenshot_size is None else int(screenshot_size)
+        )
+        if self.screenshot_size is not None and self.screenshot_size <= 0:
+            self.screenshot_size = None
         self.max_context_screenshots = (
             config.max_context_screenshots
             if max_context_screenshots is None else int(max_context_screenshots)
@@ -187,6 +194,7 @@ class ComputerUseAgent:
             reasoning_effort=self.reasoning_effort,
             coordinate_space=self.coordinate_space,
             coordinate_scale=self.coordinate_scale,
+            screenshot_size=self.screenshot_size,
             max_context_screenshots=self.max_context_screenshots,
             include_execution_feedback=self.include_execution_feedback,
             log_full_messages=self.log_full_messages,
@@ -205,7 +213,16 @@ class ComputerUseAgent:
                 # 1. 截图
                 screenshot, screenshot_path = capture_screenshot()
                 img_width, img_height = screenshot.size
-                current_screenshot_message = self._build_screenshot_message(screenshot)
+                model_screenshot = self._prepare_model_screenshot(screenshot)
+                model_img_width, model_img_height = model_screenshot.size
+                self._persist_model_screenshot(
+                    screenshot_path=screenshot_path,
+                    original_screenshot=screenshot,
+                    model_screenshot=model_screenshot,
+                )
+                current_screenshot_message = self._build_screenshot_message(
+                    model_screenshot
+                )
                 
                 if self.verbose and screenshot_path:
                     print(f"  截图: {screenshot_path}")
@@ -229,11 +246,13 @@ class ComputerUseAgent:
                     'coordinate_scale': self.coordinate_scale,
                     'max_context_screenshots': self.max_context_screenshots,
                     'include_execution_feedback': self.include_execution_feedback,
+                    'screenshot_resize': self.screenshot_size,
                     'text_input': text_input,
                     'message_summary': message_summary,
                     'retained_screenshot_count': retained_screenshot_count,
                     'screenshot_path': screenshot_path,
-                    'screenshot_size': [img_width, img_height],
+                    'screenshot_size': [model_img_width, model_img_height],
+                    'original_screenshot_size': [img_width, img_height],
                 }
                 if self.log_full_messages:
                     model_call_payload['messages'] = messages
@@ -359,6 +378,8 @@ class ComputerUseAgent:
                 executor = ActionExecutor(
                     image_width=img_width,
                     image_height=img_height,
+                    model_image_width=model_img_width,
+                    model_image_height=model_img_height,
                     coordinate_space=self.coordinate_space,
                     coordinate_scale=self.coordinate_scale,
                     verbose=self.verbose,
@@ -526,6 +547,8 @@ class ComputerUseAgent:
         print(f"  坐标空间: {self.coordinate_space}")
         if self.coordinate_space == 'relative':
             print(f"  坐标量程: {self.coordinate_scale}")
+        if self.screenshot_size is not None:
+            print(f"  模型截图尺寸: {self.screenshot_size} x {self.screenshot_size}")
         print(f"  上下文截图窗口: {self.max_context_screenshots}")
         print(f"  注入执行反馈: {'启用' if self.include_execution_feedback else '禁用'}")
         print(f"  日志完整上下文: {'启用' if self.log_full_messages else '禁用'}")
@@ -565,6 +588,43 @@ class ComputerUseAgent:
             instruction=instruction,
             language=self.language,
         )
+
+    def _prepare_model_screenshot(self, screenshot: Any) -> Any:
+        """按配置缩放传给模型的截图。"""
+        if self.screenshot_size is None:
+            return screenshot
+
+        return screenshot.resize(
+            (self.screenshot_size, self.screenshot_size),
+            resample=self._get_resize_resample(),
+        )
+
+    def _get_resize_resample(self) -> int:
+        """兼容不同 Pillow 版本的重采样常量。"""
+        try:
+            from PIL import Image as PILImage
+        except ImportError:
+            return 1
+
+        resampling = getattr(PILImage, 'Resampling', None)
+        if resampling is not None:
+            return resampling.LANCZOS
+        return PILImage.LANCZOS
+
+    def _persist_model_screenshot(
+        self,
+        screenshot_path: Optional[str],
+        original_screenshot: Any,
+        model_screenshot: Any,
+    ) -> None:
+        """若本地已保存截图，则将缩放后的模型截图同步覆盖到保存路径。"""
+        if screenshot_path is None or self.screenshot_size is None:
+            return
+
+        if getattr(original_screenshot, 'size', None) == getattr(model_screenshot, 'size', None):
+            return
+
+        model_screenshot.save(screenshot_path)
 
     def _extract_usage(self, response: Any) -> Optional[Dict[str, Any]]:
         """提取响应中的 token 使用量信息。"""

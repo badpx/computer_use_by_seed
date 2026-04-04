@@ -105,6 +105,7 @@ python -m computer_use "打开浏览器"
 | 思考档位 | `REASONING_EFFORT` | `medium` | 方舟思考档位，可选 `minimal` / `low` / `medium` / `high` |
 | 坐标空间 | `COORDINATE_SPACE` | `relative` | 坐标空间，可选 `relative` / `pixel` |
 | 坐标量程 | `COORDINATE_SCALE` | `1000` | `relative` 坐标的量程，例如 `1` / `100` / `1000` |
+| 模型截图尺寸 | `SCREENSHOT_SIZE` | - | 传给模型前的截图宽高，仅支持相同宽高值，例如 `1024` 表示缩放为 `1024x1024` |
 | 上下文截图窗口 | `MAX_CONTEXT_SCREENSHOTS` | `5` | 多轮上下文中最多保留的截图数量，包含当前轮 |
 | 注入执行反馈 | `INCLUDE_EXECUTION_FEEDBACK` | `false` | 是否将历史执行结果和失败原因注入多轮上下文 |
 | 最大步数 | `MAX_STEPS` | `20` | 最大执行步数 |
@@ -128,6 +129,7 @@ THINKING_MODE=auto
 REASONING_EFFORT=medium
 COORDINATE_SPACE=relative
 COORDINATE_SCALE=1000
+SCREENSHOT_SIZE=
 MAX_CONTEXT_SCREENSHOTS=5
 INCLUDE_EXECUTION_FEEDBACK=false
 MAX_STEPS=20
@@ -161,6 +163,8 @@ CONTEXT_LOG_DIR=./logs
 
 历史截图优先保存在限长内存队列中，不依赖本地截图文件回放；截图保存默认关闭，如果通过配置或 CLI 显式启用，本地会额外保留截图路径、尺寸以及每轮模型上下文，方便调试。
 
+如果设置了 `SCREENSHOT_SIZE` 或 `--screenshot-size`，工具会先把屏幕截图强制缩放为 `NxN` 再传给模型。目前仅支持宽高相同的正方形尺寸。启用后，`pixel` 坐标会按“模型图尺寸 -> 真实屏幕尺寸”自动换算，避免点击偏移。
+
 交互模式下：
 
 - 默认只打印 `[生效参数]`，用于展示本次运行真正生效的参数
@@ -188,6 +192,7 @@ python -m computer_use [指令] [选项]
 | `--reasoning-effort <level>` | `-r` | 设置方舟思考档位，取值 `minimal` / `low` / `medium` / `high` |
 | `--coordinate-space <space>` | - | 设置坐标空间，取值 `relative` / `pixel` |
 | `--coordinate-scale <value>` | - | 设置 `relative` 坐标量程，例如 `1` / `100` / `1000` |
+| `--screenshot-size <value>` | - | 设置传给模型的截图宽高，仅支持正方形，例如 `1024` 表示 `1024x1024` |
 | `--max-context-screenshots <count>` | - | 设置多轮上下文中保留的截图数量，包含当前轮 |
 | `--include-execution-feedback` | - | 启用执行反馈注入 |
 | `--no-execution-feedback` | - | 禁用执行反馈注入 |
@@ -218,6 +223,9 @@ python -m computer_use "搜索 Python 教程" --max-steps 10
 
 # 保留最近 3 张截图上下文
 python -m computer_use "分析页面状态" --max-context-screenshots 3
+
+# 将传给模型的截图缩放为 1024x1024
+python -m computer_use "分析页面状态" --screenshot-size 1024
 
 # 关闭执行反馈注入
 python -m computer_use "打开浏览器" --no-execution-feedback

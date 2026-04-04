@@ -138,6 +138,31 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         self.assertEqual(self.fake_pyautogui.scroll_calls, [((50,), {})])
         self.assertEqual(result, '滚动down 50步: (498, 558)')
 
+    def test_pixel_coordinates_are_scaled_from_model_image_size(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=2000,
+            image_height=1000,
+            model_image_width=1000,
+            model_image_height=500,
+            coordinate_space='pixel',
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'click',
+                'action_inputs': {
+                    'start_box': [250, 125],
+                },
+            }
+        )
+
+        self.assertEqual(
+            self.fake_pyautogui.click_calls,
+            [((500, 250), {'button': 'left', 'clicks': 1})],
+        )
+        self.assertEqual(result, '单击 (500, 250)')
+
     def test_scroll_respects_natural_scroll_setting(self):
         executor = self.action_executor.ActionExecutor(
             image_width=1000,

@@ -62,10 +62,16 @@ def print_banner():
 
 def print_config_info(
     log_full_messages: bool = False,
+    screenshot_size: Optional[int] = None,
 ):
     """打印调试用配置信息。"""
     print("[配置信息]")
     print(f"  API地址: {config.base_url}")
+    effective_screenshot_size = (
+        config.screenshot_size if screenshot_size is None else screenshot_size
+    )
+    if effective_screenshot_size is not None:
+        print(f"  模型截图尺寸: {effective_screenshot_size} x {effective_screenshot_size}")
     save_screenshot = config.save_screenshot
     print(f"  保存截图: {'是' if save_screenshot else '否'}")
     if save_screenshot:
@@ -83,6 +89,7 @@ def interactive_mode(
     reasoning_effort: Optional[str] = None,
     coordinate_space: Optional[str] = None,
     coordinate_scale: Optional[float] = None,
+    screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
     include_execution_feedback: Optional[bool] = None,
     log_full_messages: bool = False,
@@ -99,6 +106,7 @@ def interactive_mode(
         reasoning_effort: 方舟思考档位
         coordinate_space: 坐标空间
         coordinate_scale: 相对坐标量程
+        screenshot_size: 传给模型前的截图缩放尺寸
         max_context_screenshots: 多轮上下文截图窗口
         include_execution_feedback: 是否注入执行反馈
         log_full_messages: 是否在上下文日志中记录完整 messages
@@ -107,7 +115,10 @@ def interactive_mode(
     """
     print_banner()
     if log_full_messages:
-        print_config_info(log_full_messages=log_full_messages)
+        print_config_info(
+            log_full_messages=log_full_messages,
+            screenshot_size=screenshot_size,
+        )
     
     print("[交互模式]")
     print("请输入您的指令（输入 'quit' 或 'exit' 退出）\n")
@@ -129,6 +140,7 @@ def interactive_mode(
             reasoning_effort=reasoning_effort,
             coordinate_space=coordinate_space,
             coordinate_scale=coordinate_scale,
+            screenshot_size=screenshot_size,
             max_context_screenshots=max_context_screenshots,
             include_execution_feedback=include_execution_feedback,
             log_full_messages=log_full_messages,
@@ -189,6 +201,7 @@ def single_task_mode(
     reasoning_effort: Optional[str] = None,
     coordinate_space: Optional[str] = None,
     coordinate_scale: Optional[float] = None,
+    screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
     include_execution_feedback: Optional[bool] = None,
     log_full_messages: bool = False,
@@ -206,6 +219,7 @@ def single_task_mode(
         reasoning_effort: 方舟思考档位
         coordinate_space: 坐标空间
         coordinate_scale: 相对坐标量程
+        screenshot_size: 传给模型前的截图缩放尺寸
         max_context_screenshots: 多轮上下文截图窗口
         include_execution_feedback: 是否注入执行反馈
         log_full_messages: 是否在上下文日志中记录完整 messages
@@ -218,7 +232,10 @@ def single_task_mode(
     if verbose:
         print_banner()
         if log_full_messages:
-            print_config_info(log_full_messages=log_full_messages)
+            print_config_info(
+                log_full_messages=log_full_messages,
+                screenshot_size=screenshot_size,
+            )
         print(f"[任务] {instruction}\n")
 
     ensure_supported_python()
@@ -232,6 +249,7 @@ def single_task_mode(
         reasoning_effort=reasoning_effort,
         coordinate_space=coordinate_space,
         coordinate_scale=coordinate_scale,
+        screenshot_size=screenshot_size,
         max_context_screenshots=max_context_screenshots,
         include_execution_feedback=include_execution_feedback,
         log_full_messages=log_full_messages,
@@ -326,6 +344,12 @@ def main():
     )
 
     parser.add_argument(
+        '--screenshot-size',
+        type=int,
+        help='设置传给模型的截图宽高，仅支持正方形缩放，例如 1024 表示 1024x1024'
+    )
+
+    parser.add_argument(
         '--max-context-screenshots',
         type=int,
         help='多轮上下文中最多保留的截图数量（包含当前轮，默认从配置读取）'
@@ -414,6 +438,7 @@ def main():
     reasoning_effort = None
     coordinate_space = None
     coordinate_scale = None
+    screenshot_size = None
     max_context_screenshots = None
     include_execution_feedback = None
     log_full_messages = args.verbose
@@ -430,6 +455,8 @@ def main():
         coordinate_space = args.coordinate_space
     if args.coordinate_scale is not None:
         coordinate_scale = args.coordinate_scale
+    if args.screenshot_size is not None:
+        screenshot_size = args.screenshot_size
     if args.max_context_screenshots is not None:
         max_context_screenshots = args.max_context_screenshots
     if args.include_execution_feedback:
@@ -448,6 +475,7 @@ def main():
                 reasoning_effort=reasoning_effort,
                 coordinate_space=coordinate_space,
                 coordinate_scale=coordinate_scale,
+                screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
                 include_execution_feedback=include_execution_feedback,
                 log_full_messages=log_full_messages,
@@ -466,6 +494,7 @@ def main():
                 reasoning_effort=reasoning_effort,
                 coordinate_space=coordinate_space,
                 coordinate_scale=coordinate_scale,
+                screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
                 include_execution_feedback=include_execution_feedback,
                 log_full_messages=log_full_messages,

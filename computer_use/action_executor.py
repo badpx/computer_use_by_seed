@@ -22,6 +22,8 @@ class ActionExecutor:
         self,
         image_width: int,
         image_height: int,
+        model_image_width: Optional[int] = None,
+        model_image_height: Optional[int] = None,
         coordinate_space: str = 'relative',
         coordinate_scale: float = 1000,
         verbose: bool = True,
@@ -32,8 +34,10 @@ class ActionExecutor:
         初始化执行器
         
         Args:
-            image_width: 截图宽度
-            image_height: 截图高度
+            image_width: 真实屏幕截图宽度
+            image_height: 真实屏幕截图高度
+            model_image_width: 传给模型的截图宽度
+            model_image_height: 传给模型的截图高度
             coordinate_space: 坐标空间，relative / pixel
             coordinate_scale: 相对坐标量程
             verbose: 是否打印详细日志
@@ -42,6 +46,8 @@ class ActionExecutor:
         """
         self.image_width = image_width
         self.image_height = image_height
+        self.model_image_width = model_image_width or image_width
+        self.model_image_height = model_image_height or image_height
         self.coordinate_space = normalize_coordinate_space(coordinate_space)
         self.coordinate_scale = float(coordinate_scale)
         if self.coordinate_scale <= 0:
@@ -130,8 +136,8 @@ class ActionExecutor:
         x = float(x)
         y = float(y)
         if self.coordinate_space == 'pixel':
-            abs_x = int(round(x))
-            abs_y = int(round(y))
+            abs_x = int(round(x / self.model_image_width * self.image_width))
+            abs_y = int(round(y / self.model_image_height * self.image_height))
         else:
             abs_x = int(round(x / self.coordinate_scale * self.image_width))
             abs_y = int(round(y / self.coordinate_scale * self.image_height))

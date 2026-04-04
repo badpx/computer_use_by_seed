@@ -89,6 +89,7 @@ class Config:
         'REASONING_EFFORT': 'medium',
         'COORDINATE_SPACE': 'relative',
         'COORDINATE_SCALE': '1000',
+        'SCREENSHOT_SIZE': '',
         'MAX_CONTEXT_SCREENSHOTS': '5',
         'INCLUDE_EXECUTION_FEEDBACK': 'false',
         'MAX_PIXELS': '12845056',  # 16384 * 28 * 28
@@ -276,6 +277,14 @@ class Config:
             self._config.get('COORDINATE_SPACE'),
             default=self.DEFAULTS['COORDINATE_SPACE'],
         )
+
+    @property
+    def screenshot_size(self) -> Optional[int]:
+        """传给模型前的截图缩放尺寸；仅支持正方形。"""
+        size = self.get_int('SCREENSHOT_SIZE', 0)
+        if size <= 0:
+            return None
+        return size
 
     @property
     def max_context_screenshots(self) -> int:

@@ -14,12 +14,16 @@ class FakeScreenshot:
     def __init__(self, size=(1280, 720)):
         self.size = size
 
+    def resize(self, size, resample=None):
+        return FakeScreenshot(size=size)
+
     def save(self, target, format='PNG'):
+        payload = f'{self.size[0]}x{self.size[1]}'.encode('utf-8')
         if hasattr(target, 'write'):
-            target.write(b'fake-png-bytes')
+            target.write(payload)
             return
 
-        Path(target).write_bytes(b'fake-png-bytes')
+        Path(target).write_bytes(payload)
 
 
 class FakeResponse:
@@ -148,6 +152,7 @@ class AgentContextTests(unittest.TestCase):
         return self.agent_module.ComputerUseAgent(
             model='fake-model',
             max_steps=kwargs.pop('max_steps', 5),
+            screenshot_size=kwargs.pop('screenshot_size', 0),
             verbose=kwargs.pop('verbose', False),
             **kwargs,
         )
@@ -427,6 +432,42 @@ class AgentContextTests(unittest.TestCase):
         self.assertIn(
             'data:image/png;base64,',
             model_call['messages'][-1]['content'][0]['image_url']['url'],
+        )
+
+    def test_screenshot_size_resizes_image_before_model_call(self):
+        self.responses[:] = [
+            "Thought: first step\nAction: wait()",
+            "Thought: done\nAction: finished(content='ok')",
+        ]
+        self.exec_outcomes[:] = ['waited']
+
+        agent = self._make_agent(
+            save_context_log=True,
+            context_log_dir=str(self.log_dir),
+            screenshot_size=512,
+        )
+        result = agent.run('Resize screenshot for the model')
+
+        self.assertTrue(result['success'])
+        self.assertTrue(self.executor_inits)
+        self.assertEqual(self.executor_inits[0]['image_width'], 1280)
+        self.assertEqual(self.executor_inits[0]['image_height'], 720)
+        self.assertEqual(self.executor_inits[0]['model_image_width'], 512)
+        self.assertEqual(self.executor_inits[0]['model_image_height'], 512)
+
+        log_files = list(self.log_dir.glob('task_*.jsonl'))
+        records = [
+            json.loads(line)
+            for line in log_files[0].read_text(encoding='utf-8').splitlines()
+        ]
+        task_start = next(record for record in records if record['event'] == 'task_start')
+        model_call = next(record for record in records if record['event'] == 'model_call')
+        self.assertEqual(task_start['screenshot_size'], 512)
+        self.assertEqual(model_call['screenshot_size'], [512, 512])
+        self.assertEqual(model_call['original_screenshot_size'], [1280, 720])
+        self.assertEqual(
+            (self.screenshot_dir / 'step_1.png').read_text(encoding='utf-8'),
+            '512x512',
         )
 
     def test_agent_passes_natural_scroll_override_to_executor(self):

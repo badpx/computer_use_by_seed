@@ -153,6 +153,7 @@ class CliPromptTests(unittest.TestCase):
         with mock.patch.object(self.cli, 'ensure_supported_python'):
             self.cli.single_task_mode(
                 instruction='测试上下文参数',
+                screenshot_size=1024,
                 max_context_screenshots=3,
                 include_execution_feedback=False,
                 log_full_messages=True,
@@ -160,6 +161,7 @@ class CliPromptTests(unittest.TestCase):
             )
 
         self.assertEqual(len(fake_agent_instances), 1)
+        self.assertEqual(fake_agent_instances[0].kwargs['screenshot_size'], 1024)
         self.assertEqual(fake_agent_instances[0].kwargs['max_context_screenshots'], 3)
         self.assertEqual(
             fake_agent_instances[0].kwargs['include_execution_feedback'],
