@@ -118,6 +118,7 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         executor = self.action_executor.ActionExecutor(
             image_width=1000,
             image_height=1000,
+            coordinate_space='pixel',
             natural_scroll=False,
             verbose=False,
         )
@@ -140,6 +141,7 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         executor = self.action_executor.ActionExecutor(
             image_width=1000,
             image_height=1000,
+            coordinate_space='pixel',
             natural_scroll=True,
             verbose=False,
         )
@@ -162,6 +164,7 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         executor = self.action_executor.ActionExecutor(
             image_width=1000,
             image_height=1000,
+            coordinate_space='pixel',
             verbose=False,
         )
 
@@ -179,6 +182,77 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
             [((250, 750), {'button': 'left', 'clicks': 2, 'interval': 0.12})],
         )
         self.assertEqual(result, '双击 (250, 750)')
+
+    def test_click_uses_relative_coordinate_scale_one(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=200,
+            image_height=100,
+            coordinate_space='relative',
+            coordinate_scale=1,
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'click',
+                'action_inputs': {
+                    'start_box': [0.25, 0.5],
+                },
+            }
+        )
+
+        self.assertEqual(
+            self.fake_pyautogui.click_calls,
+            [((50, 50), {'button': 'left', 'clicks': 1})],
+        )
+        self.assertEqual(result, '单击 (50, 50)')
+
+    def test_click_uses_relative_coordinate_scale_hundred(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=200,
+            image_height=100,
+            coordinate_space='relative',
+            coordinate_scale=100,
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'click',
+                'action_inputs': {
+                    'start_box': [25, 50],
+                },
+            }
+        )
+
+        self.assertEqual(
+            self.fake_pyautogui.click_calls,
+            [((50, 50), {'button': 'left', 'clicks': 1})],
+        )
+        self.assertEqual(result, '单击 (50, 50)')
+
+    def test_click_uses_pixel_coordinates_without_scaling(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=200,
+            image_height=100,
+            coordinate_space='pixel',
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'click',
+                'action_inputs': {
+                    'start_box': [25, 50],
+                },
+            }
+        )
+
+        self.assertEqual(
+            self.fake_pyautogui.click_calls,
+            [((25, 50), {'button': 'left', 'clicks': 1})],
+        )
+        self.assertEqual(result, '单击 (25, 50)')
 
 
 if __name__ == '__main__':

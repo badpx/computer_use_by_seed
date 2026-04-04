@@ -11,6 +11,7 @@ from pathlib import Path
 
 THINKING_MODES = ('enabled', 'disabled', 'auto')
 REASONING_EFFORTS = ('minimal', 'low', 'medium', 'high')
+COORDINATE_SPACES = ('relative', 'pixel')
 
 
 def normalize_thinking_mode(
@@ -59,6 +60,17 @@ def resolve_thinking_settings(
     return normalized_mode, normalized_effort
 
 
+def normalize_coordinate_space(
+    coordinate_space: Optional[str],
+    default: str = 'relative',
+) -> str:
+    """标准化坐标空间。"""
+    space = str(coordinate_space or default).strip().lower()
+    if space in COORDINATE_SPACES:
+        return space
+    return default
+
+
 class Config:
     """配置类，支持多层级配置加载"""
     
@@ -75,6 +87,7 @@ class Config:
         'TEMPERATURE': '0.0',
         'THINKING_MODE': 'auto',
         'REASONING_EFFORT': 'medium',
+        'COORDINATE_SPACE': 'relative',
         'COORDINATE_SCALE': '1000',
         'MAX_PIXELS': '12845056',  # 16384 * 28 * 28
         'MIN_PIXELS': '78400',     # 100 * 28 * 28
@@ -248,8 +261,19 @@ class Config:
     
     @property
     def coordinate_scale(self) -> int:
-        """坐标缩放比例"""
-        return self.get_int('COORDINATE_SCALE', 1000)
+        """相对坐标的量程。"""
+        scale = self.get_float('COORDINATE_SCALE', 1000.0)
+        if scale <= 0:
+            return 1000.0
+        return scale
+
+    @property
+    def coordinate_space(self) -> str:
+        """坐标空间：relative / pixel。"""
+        return normalize_coordinate_space(
+            self._config.get('COORDINATE_SPACE'),
+            default=self.DEFAULTS['COORDINATE_SPACE'],
+        )
 
     @property
     def thinking_mode(self) -> str:

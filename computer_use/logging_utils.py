@@ -29,6 +29,8 @@ class ContextLogger:
         temperature: float,
         thinking_mode: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
+        coordinate_space: Optional[str] = None,
+        coordinate_scale: Optional[float] = None,
     ) -> Optional[str]:
         """开始一个新任务并创建日志文件。"""
         if not self.enabled:
@@ -46,6 +48,8 @@ class ContextLogger:
             temperature=temperature,
             thinking_mode=thinking_mode,
             reasoning_effort=reasoning_effort,
+            coordinate_space=coordinate_space,
+            coordinate_scale=coordinate_scale,
         )
 
         return self.task_id

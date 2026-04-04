@@ -103,6 +103,8 @@ python -m computer_use "打开浏览器"
 | 温度参数 | `TEMPERATURE` | `0.0` | 模型温度参数 |
 | 思考模式 | `THINKING_MODE` | `auto` | 方舟思考模式，可选 `enabled` / `disabled` / `auto` |
 | 思考档位 | `REASONING_EFFORT` | `medium` | 方舟思考档位，可选 `minimal` / `low` / `medium` / `high` |
+| 坐标空间 | `COORDINATE_SPACE` | `relative` | 坐标空间，可选 `relative` / `pixel` |
+| 坐标量程 | `COORDINATE_SCALE` | `1000` | `relative` 坐标的量程，例如 `1` / `100` / `1000` |
 | 最大步数 | `MAX_STEPS` | `20` | 最大执行步数 |
 | 保存截图 | `SAVE_SCREENSHOT` | `false` | 是否保存截图 |
 | 截图目录 | `SCREENSHOT_DIR` | `./screenshots` | 截图保存目录 |
@@ -122,6 +124,8 @@ ARK_BASE_URL=http://ark.cn-beijing.volces.com/api/v3
 TEMPERATURE=0.0
 THINKING_MODE=auto
 REASONING_EFFORT=medium
+COORDINATE_SPACE=relative
+COORDINATE_SCALE=1000
 MAX_STEPS=20
 
 # 截图配置
@@ -173,6 +177,8 @@ python -m computer_use [指令] [选项]
 | `--max-steps` | `-s` | 指定最大执行步数 |
 | `--thinking <mode>` | `-t` | 设置方舟思考模式，取值 `enabled` / `disabled` / `auto` |
 | `--reasoning-effort <level>` | `-r` | 设置方舟思考档位，取值 `minimal` / `low` / `medium` / `high` |
+| `--coordinate-space <space>` | - | 设置坐标空间，取值 `relative` / `pixel` |
+| `--coordinate-scale <value>` | - | 设置 `relative` 坐标量程，例如 `1` / `100` / `1000` |
 | `--save-screenshot` | - | 启用截图保存 |
 | `--no-screenshot` | - | 禁用截图保存 |
 | `--screenshot-dir` | - | 指定截图保存目录 |
@@ -205,6 +211,12 @@ python -m computer_use "打开浏览器" -t disabled
 
 # 设置低档位思考
 python -m computer_use "总结这个页面" -t enabled -r low
+
+# Kimi [0,1] 坐标输出
+python -m computer_use "点击按钮" --coordinate-space relative --coordinate-scale 1
+
+# 原生像素坐标输出
+python -m computer_use "点击按钮" --coordinate-space pixel
 
 # 启用截图保存
 python -m computer_use "打开计算器" --save-screenshot

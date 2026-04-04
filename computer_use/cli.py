@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .compat import ensure_supported_python
-from .config import config, resolve_thinking_settings
+from .config import config, resolve_thinking_settings, normalize_coordinate_space
 
 
 DEFAULT_HISTORY_FILE = Path.home() / '.computer_use_history'
@@ -63,6 +63,8 @@ def print_banner():
 def print_config_info(
     thinking_mode: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    coordinate_space: Optional[str] = None,
+    coordinate_scale: Optional[float] = None,
 ):
     """打印配置信息"""
     reasoning_effort_explicit = (
@@ -73,12 +75,21 @@ def print_config_info(
         reasoning_effort or config.reasoning_effort,
         reasoning_effort_explicit=reasoning_effort_explicit,
     )
+    effective_coordinate_space = normalize_coordinate_space(
+        coordinate_space or config.coordinate_space
+    )
+    effective_coordinate_scale = (
+        config.coordinate_scale if coordinate_scale is None else coordinate_scale
+    )
     print("[配置信息]")
     print(f"  模型: {config.model}")
     print(f"  API地址: {config.base_url}")
     print(f"  最大步数: {config.max_steps}")
     print(f"  思考模式: {effective_thinking_mode}")
     print(f"  思考档位: {effective_reasoning_effort}")
+    print(f"  坐标空间: {effective_coordinate_space}")
+    if effective_coordinate_space == 'relative':
+        print(f"  坐标量程: {effective_coordinate_scale}")
     save_screenshot = config.save_screenshot
     print(f"  保存截图: {'是' if save_screenshot else '否'}")
     if save_screenshot:
@@ -94,6 +105,8 @@ def interactive_mode(
     max_steps: Optional[int] = None,
     thinking_mode: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    coordinate_space: Optional[str] = None,
+    coordinate_scale: Optional[float] = None,
     natural_scroll: Optional[bool] = None,
     verbose: bool = True
 ):
@@ -105,6 +118,8 @@ def interactive_mode(
         max_steps: 最大执行步数
         thinking_mode: 方舟思考模式
         reasoning_effort: 方舟思考档位
+        coordinate_space: 坐标空间
+        coordinate_scale: 相对坐标量程
         natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
     """
@@ -112,6 +127,8 @@ def interactive_mode(
     print_config_info(
         thinking_mode=thinking_mode,
         reasoning_effort=reasoning_effort,
+        coordinate_space=coordinate_space,
+        coordinate_scale=coordinate_scale,
     )
     
     print("[交互模式]")
@@ -132,6 +149,8 @@ def interactive_mode(
             max_steps=max_steps,
             thinking_mode=thinking_mode,
             reasoning_effort=reasoning_effort,
+            coordinate_space=coordinate_space,
+            coordinate_scale=coordinate_scale,
             natural_scroll=natural_scroll,
             verbose=verbose
         )
@@ -187,6 +206,8 @@ def single_task_mode(
     max_steps: Optional[int] = None,
     thinking_mode: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    coordinate_space: Optional[str] = None,
+    coordinate_scale: Optional[float] = None,
     natural_scroll: Optional[bool] = None,
     verbose: bool = True
 ) -> Dict[str, Any]:
@@ -199,6 +220,8 @@ def single_task_mode(
         max_steps: 最大执行步数
         thinking_mode: 方舟思考模式
         reasoning_effort: 方舟思考档位
+        coordinate_space: 坐标空间
+        coordinate_scale: 相对坐标量程
         natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
         
@@ -218,6 +241,8 @@ def single_task_mode(
         max_steps=max_steps,
         thinking_mode=thinking_mode,
         reasoning_effort=reasoning_effort,
+        coordinate_space=coordinate_space,
+        coordinate_scale=coordinate_scale,
         natural_scroll=natural_scroll,
         verbose=verbose
     )
@@ -295,6 +320,18 @@ def main():
         choices=['minimal', 'low', 'medium', 'high'],
         help='设置方舟思考档位：minimal / low / medium / high（默认从配置读取）'
     )
+
+    parser.add_argument(
+        '--coordinate-space',
+        choices=['relative', 'pixel'],
+        help='设置坐标空间：relative / pixel（默认从配置读取）'
+    )
+
+    parser.add_argument(
+        '--coordinate-scale',
+        type=float,
+        help='设置 relative 坐标的量程，例如 1 / 100 / 1000（默认从配置读取）'
+    )
     
     parser.add_argument(
         '--screenshot-dir',
@@ -359,6 +396,8 @@ def main():
     natural_scroll = None
     thinking_mode = None
     reasoning_effort = None
+    coordinate_space = None
+    coordinate_scale = None
     if args.natural_scroll:
         natural_scroll = True
     elif args.traditional_scroll:
@@ -368,6 +407,10 @@ def main():
         thinking_mode = args.thinking
     if args.reasoning_effort:
         reasoning_effort = args.reasoning_effort
+    if args.coordinate_space:
+        coordinate_space = args.coordinate_space
+    if args.coordinate_scale is not None:
+        coordinate_scale = args.coordinate_scale
     
     try:
         if args.instruction:
@@ -378,6 +421,8 @@ def main():
                 max_steps=args.max_steps,
                 thinking_mode=thinking_mode,
                 reasoning_effort=reasoning_effort,
+                coordinate_space=coordinate_space,
+                coordinate_scale=coordinate_scale,
                 natural_scroll=natural_scroll,
                 verbose=verbose
             )
@@ -391,6 +436,8 @@ def main():
                 max_steps=args.max_steps,
                 thinking_mode=thinking_mode,
                 reasoning_effort=reasoning_effort,
+                coordinate_space=coordinate_space,
+                coordinate_scale=coordinate_scale,
                 natural_scroll=natural_scroll,
                 verbose=verbose
             )

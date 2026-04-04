@@ -6,6 +6,8 @@
 import re
 from typing import Dict, Any, Tuple, Optional
 
+NUMBER_PATTERN = r"-?(?:\d+(?:\.\d+)?|\.\d+)"
+
 
 class ActionParser:
     """动作解析器"""
@@ -156,17 +158,41 @@ class ActionParser:
                 
                 # 处理 point 标记
                 if '<point>' in value and '</point>' in value:
-                    point_match = re.search(r'<point>(\d+)\s+(\d+)</point>', value)
+                    point_match = re.search(
+                        rf'<point>({NUMBER_PATTERN})\s+({NUMBER_PATTERN})</point>',
+                        value,
+                    )
                     if point_match:
-                        value = [int(point_match.group(1)), int(point_match.group(2))]
+                        value = [
+                            float(point_match.group(1)),
+                            float(point_match.group(2)),
+                        ]
                         params['start_box'] = value
                         continue
                 
                 # 处理 start_point/end_point
                 if '<start_point>' in value or '<end_point>' in value:
-                    point_match = re.search(r'<(?:start|end)_point>(\d+)\s+(\d+)</(?:start|end)_point>', value)
+                    point_match = re.search(
+                        rf'<(?:start|end)_point>({NUMBER_PATTERN})\s+({NUMBER_PATTERN})</(?:start|end)_point>',
+                        value,
+                    )
                     if point_match:
-                        value = [int(point_match.group(1)), int(point_match.group(2))]
+                        value = [
+                            float(point_match.group(1)),
+                            float(point_match.group(2)),
+                        ]
+                        if key == 'start_point':
+                            params['start_box'] = value
+                            continue
+                        if key == 'end_point':
+                            params['end_box'] = value
+                            continue
+
+                if key in {'x', 'y'}:
+                    try:
+                        value = float(value)
+                    except ValueError:
+                        pass
                 
                 params[key] = value
         

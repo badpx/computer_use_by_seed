@@ -10,9 +10,9 @@ from typing import Dict, Any, List, Optional, Tuple, Union
 
 import pyautogui
 
-from .config import config
+from .config import config, normalize_coordinate_space
 
-DOUBLE_CLICK_INTERVAL = 0.10
+DOUBLE_CLICK_INTERVAL = 0.12
 
 
 class ActionExecutor:
@@ -22,7 +22,8 @@ class ActionExecutor:
         self,
         image_width: int,
         image_height: int,
-        scale_factor: int = 1000,
+        coordinate_space: str = 'relative',
+        coordinate_scale: float = 1000,
         verbose: bool = True,
         input_swap: bool = True,
         natural_scroll: Optional[bool] = None
@@ -33,14 +34,18 @@ class ActionExecutor:
         Args:
             image_width: 截图宽度
             image_height: 截图高度
-            scale_factor: 坐标缩放比例
+            coordinate_space: 坐标空间，relative / pixel
+            coordinate_scale: 相对坐标量程
             verbose: 是否打印详细日志
             input_swap: 是否使用剪贴板输入长文本
             natural_scroll: 是否使用自然滚动方向
         """
         self.image_width = image_width
         self.image_height = image_height
-        self.scale_factor = scale_factor
+        self.coordinate_space = normalize_coordinate_space(coordinate_space)
+        self.coordinate_scale = float(coordinate_scale)
+        if self.coordinate_scale <= 0:
+            raise ValueError("coordinate_scale 必须大于 0")
         self.verbose = verbose
         self.input_swap = input_swap
         self.natural_scroll = (
@@ -111,19 +116,25 @@ class ActionExecutor:
                 print(f"  [错误] {result}")
             return result
     
-    def _convert_coordinates(self, x: int, y: int) -> Tuple[int, int]:
+    def _convert_coordinates(self, x: float, y: float) -> Tuple[int, int]:
         """
-        将相对坐标转换为绝对屏幕坐标
+        将模型坐标转换为绝对屏幕坐标
         
         Args:
-            x: 相对 X 坐标 (0-scale_factor)
-            y: 相对 Y 坐标 (0-scale_factor)
+            x: 模型 X 坐标
+            y: 模型 Y 坐标
             
         Returns:
             Tuple[int, int]: 绝对屏幕坐标
         """
-        abs_x = int(int(x) / self.scale_factor * self.image_width)
-        abs_y = int(int(y) / self.scale_factor * self.image_height)
+        x = float(x)
+        y = float(y)
+        if self.coordinate_space == 'pixel':
+            abs_x = int(round(x))
+            abs_y = int(round(y))
+        else:
+            abs_x = int(round(x / self.coordinate_scale * self.image_width))
+            abs_y = int(round(y / self.coordinate_scale * self.image_height))
         return abs_x, abs_y
     
     def _get_coordinates_from_box(self, box: any) -> Tuple[int, int]:
@@ -146,8 +157,8 @@ class ActionExecutor:
             elif len(box) == 4:
                 # 如果是 bbox (x1, y1, x2, y2)，取中心点
                 x1, y1, x2, y2 = box
-                x = (x1 + x2) // 2
-                y = (y1 + y2) // 2
+                x = (float(x1) + float(x2)) / 2
+                y = (float(y1) + float(y2)) / 2
                 return self._convert_coordinates(x, y)
         
         raise ValueError(f"无法解析坐标: {box}")
@@ -411,7 +422,8 @@ def execute_action(
     action: Dict[str, Any],
     image_width: int,
     image_height: int,
-    scale_factor: int = 1000,
+    coordinate_space: str = 'relative',
+    coordinate_scale: float = 1000,
     verbose: bool = True
 ) -> Union[str, List[str]]:
     """
@@ -421,7 +433,8 @@ def execute_action(
         action: 动作字典
         image_width: 图片宽度
         image_height: 图片高度
-        scale_factor: 坐标缩放比例
+        coordinate_space: 坐标空间
+        coordinate_scale: 相对坐标量程
         verbose: 是否打印详细日志
         
     Returns:
@@ -430,7 +443,8 @@ def execute_action(
     executor = ActionExecutor(
         image_width=image_width,
         image_height=image_height,
-        scale_factor=scale_factor,
+        coordinate_space=coordinate_space,
+        coordinate_scale=coordinate_scale,
         verbose=verbose
     )
     return executor.execute(action)
