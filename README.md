@@ -74,6 +74,7 @@ python -m computer_use
 - 左右键编辑当前输入
 - 直接粘贴长文本
 - 历史记录持久化到 `~/.computer_use_history`
+- 输入 slash 命令并自动补齐命令名，例如 `/status`、`/exit`
 
 如果运行环境中缺少 `prompt_toolkit`，CLI 会自动回退到基础 `input()` 模式。
 
@@ -161,7 +162,7 @@ CONTEXT_LOG_DIR=./logs
 
 交互模式下：
 
-- 默认只打印 `[生效参数]`，用于展示本次运行真正生效的参数
+- 可通过 `/status` 查看本次会话真正生效的参数
 - 传 `--verbose` 时，额外打印 `[配置信息]`，用于展示基础环境和调试相关配置
 
 ## CLI 参数

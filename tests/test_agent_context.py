@@ -387,7 +387,7 @@ class AgentContextTests(unittest.TestCase):
         output = io.StringIO()
 
         with redirect_stdout(output):
-            self._make_agent(verbose=True)
+            self._make_agent(verbose=True, print_init_status=True)
 
         printed = output.getvalue()
         self.assertIn('[生效参数]', printed)
@@ -397,6 +397,30 @@ class AgentContextTests(unittest.TestCase):
         self.assertIn('日志完整上下文', printed)
         self.assertIn('语言: Chinese', printed)
         self.assertNotIn('[初始化] Computer Use Agent', printed)
+
+    def test_format_effective_status_returns_current_parameters(self):
+        agent = self._make_agent(
+            coordinate_space='relative',
+            coordinate_scale=1000,
+            max_context_screenshots=3,
+            include_execution_feedback=True,
+            verbose=False,
+        )
+
+        rendered = agent.format_effective_status()
+        self.assertIn('[生效参数]', rendered)
+        self.assertIn('模型: fake-model', rendered)
+        self.assertIn('坐标量程: 1000', rendered)
+        self.assertIn('上下文截图窗口: 3', rendered)
+        self.assertIn('注入执行反馈: 启用', rendered)
+
+    def test_init_output_can_be_suppressed(self):
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            self._make_agent(verbose=True, print_init_status=False)
+
+        self.assertEqual(output.getvalue(), '')
 
     def test_parse_failure_reason_is_condensed_to_single_line(self):
         self.responses[:] = [

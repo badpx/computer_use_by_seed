@@ -5,8 +5,9 @@ import os
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Mapping, Optional
 
 from .compat import ensure_supported_python
 from .config import config
@@ -217,6 +218,109 @@ class LiveStatusRenderer:
         self._status_visible = False
 
 
+@dataclass(frozen=True)
+class InteractiveCommand:
+    """交互模式本地命令定义。"""
+
+    name: str
+    handler: Callable[['InteractiveCommandContext', str], None]
+    summary: str
+
+
+@dataclass
+class InteractiveCommandContext:
+    """交互模式本地命令上下文。"""
+
+    agent: Any
+    should_exit: bool = False
+
+
+def _handle_status_command(context: InteractiveCommandContext, args_text: str) -> None:
+    """显示当前会话实际生效的参数。"""
+    del args_text
+    print()
+    print(context.agent.format_effective_status())
+    print()
+
+
+def _handle_exit_command(context: InteractiveCommandContext, args_text: str) -> None:
+    """退出交互模式。"""
+    del args_text
+    context.should_exit = True
+    print("\n感谢使用，再见！")
+
+
+def _build_interactive_commands() -> Dict[str, InteractiveCommand]:
+    """返回交互模式支持的本地命令。"""
+    return {
+        '/exit': InteractiveCommand(
+            name='/exit',
+            handler=_handle_exit_command,
+            summary='退出交互模式',
+        ),
+        '/status': InteractiveCommand(
+            name='/status',
+            handler=_handle_status_command,
+            summary='显示当前生效参数',
+        ),
+    }
+
+
+def _create_command_completer(commands: Mapping[str, InteractiveCommand]):
+    """为 slash 命令创建 prompt_toolkit 补齐器。"""
+    try:
+        prompt_toolkit_completion = importlib.import_module('prompt_toolkit.completion')
+    except ImportError:
+        return None
+
+    completer_base_cls = prompt_toolkit_completion.Completer
+    completion_cls = prompt_toolkit_completion.Completion
+    command_names = tuple(sorted(commands))
+
+    class SlashCommandCompleter(completer_base_cls):
+        def get_completions(self, document, complete_event):
+            del complete_event
+            text_before_cursor = document.text_before_cursor
+            stripped_text = text_before_cursor.lstrip()
+            if not stripped_text.startswith('/'):
+                return
+            if ' ' in stripped_text:
+                return
+
+            for command_name in command_names:
+                if command_name.startswith(stripped_text.lower()):
+                    yield completion_cls(
+                        command_name,
+                        start_position=-len(stripped_text),
+                    )
+
+    return SlashCommandCompleter()
+
+
+def _dispatch_interactive_command(
+    raw_input: str,
+    context: InteractiveCommandContext,
+    commands: Mapping[str, InteractiveCommand],
+) -> bool:
+    """尝试执行交互模式本地命令。"""
+    stripped = raw_input.lstrip()
+    if not stripped.startswith('/'):
+        return False
+
+    command_name, _, args_text = stripped.partition(' ')
+    command = commands.get(command_name.lower())
+    if command is None:
+        available_commands = ', '.join(sorted(commands))
+        print()
+        print(f"[命令错误] 未知命令: {command_name}")
+        print(f"[可用命令] {available_commands}")
+        print()
+        return True
+
+    command.handler(context, args_text.strip())
+    return True
+
+
 def _resolve_history_file(history_file: Optional[Path] = None) -> Path:
     """解析交互模式历史记录文件路径。"""
     if history_file is not None:
@@ -250,12 +354,15 @@ def _read_instruction(
     prompt_session,
     prompt_text: str = '> ',
     bottom_toolbar=None,
+    completer=None,
 ) -> str:
     """从 prompt_toolkit 或内建 input 读取用户指令。"""
     if prompt_session is not None:
         return prompt_session.prompt(
             prompt_text,
             bottom_toolbar=bottom_toolbar,
+            completer=completer,
+            complete_while_typing=completer is not None,
         ).strip()
 
     return input(prompt_text).strip()
@@ -333,7 +440,7 @@ def interactive_mode(
         )
     
     print("[交互模式]")
-    print("请输入您的指令（输入 'quit' 或 'exit' 退出）\n")
+    print("请输入您的指令（输入 '/exit' 退出）\n")
 
     ensure_supported_python()
     from .agent import ComputerUseAgent
@@ -360,6 +467,7 @@ def interactive_mode(
             skills_dir=skills_dir,
             enable_skills=enable_skills,
             verbose=verbose,
+            print_init_status=False,
             runtime_status_callback=None,
         )
     except Exception as e:
@@ -367,6 +475,9 @@ def interactive_mode(
         return
 
     status_bar = None
+    commands = _build_interactive_commands()
+    command_context = InteractiveCommandContext(agent=agent)
+    command_completer = _create_command_completer(commands) if prompt_session is not None else None
     if prompt_session is not None:
         status_bar = InteractiveStatusBar(
             model=getattr(agent, 'model', config.model),
@@ -382,12 +493,17 @@ def interactive_mode(
             instruction = _read_instruction(
                 prompt_session,
                 bottom_toolbar=status_bar.render if status_bar is not None else None,
+                completer=command_completer,
             )
             
-            # 检查退出命令
-            if instruction.lower() in ['quit', 'exit', 'q']:
-                print("\n感谢使用，再见！")
-                break
+            if _dispatch_interactive_command(
+                instruction,
+                context=command_context,
+                commands=commands,
+            ):
+                if command_context.should_exit:
+                    break
+                continue
             
             # 跳过空输入
             if not instruction:
@@ -505,7 +621,8 @@ def single_task_mode(
         natural_scroll=natural_scroll,
         skills_dir=skills_dir,
         enable_skills=enable_skills,
-        verbose=verbose
+        verbose=verbose,
+        print_init_status=True,
     )
 
     # 执行任务

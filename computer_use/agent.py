@@ -50,6 +50,7 @@ class ComputerUseAgent:
         context_log_dir: Optional[str] = None,
         language: str = 'Chinese',
         verbose: bool = True,
+        print_init_status: bool = True,
         skills_dir: Optional[str] = None,
         enable_skills: Optional[bool] = None,
         runtime_status_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
@@ -76,6 +77,7 @@ class ComputerUseAgent:
             context_log_dir: 上下文日志目录
             language: 提示词语言
             verbose: 是否打印详细日志
+            print_init_status: 是否在初始化时打印生效参数
         """
         # 配置参数
         self.model = model or config.model
@@ -130,6 +132,7 @@ class ComputerUseAgent:
         self.save_debug_screenshots = self.save_context_log and self.log_full_messages
         self.language = language
         self.verbose = verbose
+        self.print_init_status = print_init_status
         self.enable_skills = enable_skills if enable_skills is not None else config.enable_skills
         self.skills_dir = skills_dir or config.skills_dir
         self.skills: List[Skill] = discover_skills(self.skills_dir) if self.enable_skills else []
@@ -162,7 +165,7 @@ class ComputerUseAgent:
         # 当前步骤
         self.current_step = 0
         
-        if self.verbose:
+        if self.verbose and self.print_init_status:
             self._print_init_info()
     
     def run(self, instruction: str) -> Dict[str, Any]:
@@ -580,29 +583,46 @@ class ComputerUseAgent:
         
         return result
 
+    def format_effective_status(self) -> str:
+        """格式化当前运行的生效参数。"""
+        lines = [
+            '[生效参数]',
+            f"  模型: {self.model}",
+            f"  最大步数: {self.max_steps}",
+            f"  思考: {self.thinking_mode} / {self.reasoning_effort}",
+            f"  坐标空间: {self.coordinate_space}",
+        ]
+        if self.coordinate_space == 'relative':
+            lines.append(f"  坐标量程: {self.coordinate_scale}")
+        if self.screenshot_size is not None:
+            lines.append(
+                f"  模型截图尺寸: {self.screenshot_size} x {self.screenshot_size}"
+            )
+        lines.extend(
+            [
+                f"  上下文截图窗口: {self.max_context_screenshots}",
+                f"  注入执行反馈: {'启用' if self.include_execution_feedback else '禁用'}",
+                f"  日志完整上下文: {'启用' if self.log_full_messages else '禁用'}",
+            ]
+        )
+        if self.save_debug_screenshots:
+            lines.append(f"  调试截图目录: {self.context_log_dir}/screenshots")
+        lines.extend(
+            [
+                f"  自然滚动: {'启用' if self.natural_scroll else '禁用'}",
+                f"  上下文日志: {'启用' if self.save_context_log else '禁用'}",
+                f"  语言: {self.language}",
+            ]
+        )
+        if self.enable_skills:
+            lines.append(f"  技能: {len(self.skills)} 个已加载")
+        else:
+            lines.append("  技能: 禁用")
+        return '\n'.join(lines)
+
     def _print_init_info(self) -> None:
         """打印当前运行的生效参数。"""
-        print(f"[生效参数]")
-        print(f"  模型: {self.model}")
-        print(f"  最大步数: {self.max_steps}")
-        print(f"  思考: {self.thinking_mode} / {self.reasoning_effort}")
-        print(f"  坐标空间: {self.coordinate_space}")
-        if self.coordinate_space == 'relative':
-            print(f"  坐标量程: {self.coordinate_scale}")
-        if self.screenshot_size is not None:
-            print(f"  模型截图尺寸: {self.screenshot_size} x {self.screenshot_size}")
-        print(f"  上下文截图窗口: {self.max_context_screenshots}")
-        print(f"  注入执行反馈: {'启用' if self.include_execution_feedback else '禁用'}")
-        print(f"  日志完整上下文: {'启用' if self.log_full_messages else '禁用'}")
-        if self.save_debug_screenshots:
-            print(f"  调试截图目录: {self.context_log_dir}/screenshots")
-        print(f"  自然滚动: {'启用' if self.natural_scroll else '禁用'}")
-        print(f"  上下文日志: {'启用' if self.save_context_log else '禁用'}")
-        print(f"  语言: {self.language}")
-        if self.enable_skills:
-            print(f"  技能: {len(self.skills)} 个已加载")
-        else:
-            print(f"  技能: 禁用")
+        print(self.format_effective_status())
 
     def _call_model(
         self,
