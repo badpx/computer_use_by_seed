@@ -3,11 +3,12 @@
 多轮自动执行直到任务完成
 """
 
+import json
 import io
 import time
 import base64
 from collections import deque
-from typing import Deque, Dict, Any, List, Optional
+from typing import Callable, Deque, Dict, Any, List, Optional, Set
 
 from volcenginesdkarkruntime import Ark
 
@@ -18,6 +19,9 @@ from .action_executor import ActionExecutor
 from .logging_utils import ContextLogger
 from .prompts import COMPUTER_USE_DOUBAO, SKILLS_PROMPT_ADDENDUM
 from .skills import Skill, discover_skills, skills_to_tools, load_skill
+
+TOKEN_ESTIMATE_BYTES = 4
+SCREENSHOT_TOKEN_ESTIMATE = 2000
 
 
 class ComputerUseAgent:
@@ -48,6 +52,7 @@ class ComputerUseAgent:
         verbose: bool = True,
         skills_dir: Optional[str] = None,
         enable_skills: Optional[bool] = None,
+        runtime_status_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         """
         初始化代理
@@ -129,6 +134,7 @@ class ComputerUseAgent:
         self.skills_dir = skills_dir or config.skills_dir
         self.skills: List[Skill] = discover_skills(self.skills_dir) if self.enable_skills else []
         self.skill_tools: List[dict] = skills_to_tools(self.skills) if self.skills else []
+        self.runtime_status_callback = runtime_status_callback
 
         config.validate()
 
@@ -143,6 +149,9 @@ class ComputerUseAgent:
         self.assistant_history: List[Dict[str, Any]] = []
         self.execution_feedback_history: List[Optional[Dict[str, Any]]] = []
         self.recent_screenshot_messages: Deque[Dict[str, Any]] = deque()
+        self.activated_skills: Set[str] = set()
+        self.last_usage_total_tokens: Optional[int] = None
+        self.last_context_estimated_bytes = 0
 
         # 上下文日志
         self.context_logger = ContextLogger(
@@ -187,6 +196,9 @@ class ComputerUseAgent:
         self.assistant_history = []
         self.execution_feedback_history = []
         self.recent_screenshot_messages = deque()
+        self.activated_skills = set()
+        self.last_usage_total_tokens = None
+        self.last_context_estimated_bytes = 0
         self.current_step = 0
         self.context_logger = ContextLogger(
             enabled=self.save_context_log,
@@ -208,6 +220,7 @@ class ComputerUseAgent:
             log_full_messages=self.log_full_messages,
         )
         result['context_log_path'] = self.context_logger.current_log_path
+        self._notify_runtime_status()
         
         try:
             # 多轮执行循环
@@ -243,6 +256,8 @@ class ComputerUseAgent:
                         current_screenshot_message=current_screenshot_message,
                     )
                 )
+                self.last_context_estimated_bytes = self._estimate_context_bytes(messages)
+                self._notify_runtime_status()
 
                 model_call_payload = {
                     'instruction': instruction,
@@ -273,6 +288,9 @@ class ComputerUseAgent:
                 response_obj, response = self._call_model(
                     messages=messages,
                 )
+                usage = self._extract_usage(response_obj)
+                self._record_usage_total_tokens(usage)
+                self._notify_runtime_status()
 
                 self.context_logger.log_event(
                     'model_response',
@@ -280,7 +298,7 @@ class ComputerUseAgent:
                     step=self.current_step,
                     **self._build_logged_model_response(response_obj),
                     raw_response=response,
-                    usage=self._extract_usage(response_obj),
+                    usage=usage,
                 )
                 
                 if self.verbose:
@@ -314,6 +332,10 @@ class ComputerUseAgent:
                         step_record=step_record,
                         parsed_action='',
                     )
+                    self.last_context_estimated_bytes = self._estimate_next_context_bytes(
+                        instruction
+                    )
+                    self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
                         instruction=instruction,
@@ -419,6 +441,10 @@ class ComputerUseAgent:
                         step_record=step_record,
                         parsed_action=parsed_action,
                     )
+                    self.last_context_estimated_bytes = self._estimate_next_context_bytes(
+                        instruction
+                    )
+                    self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
                         instruction=instruction,
@@ -499,6 +525,10 @@ class ComputerUseAgent:
                     step_record=step_record,
                     parsed_action=parsed_action,
                 )
+                self.last_context_estimated_bytes = self._estimate_next_context_bytes(
+                    instruction
+                )
+                self._notify_runtime_status()
                 self.context_logger.log_event(
                     'step_result',
                     instruction=instruction,
@@ -535,6 +565,10 @@ class ComputerUseAgent:
             result['elapsed_time_text'] = self._format_elapsed_time(
                 result['elapsed_seconds']
             )
+        result['runtime_status'] = self._build_runtime_status(
+            elapsed_seconds=result['elapsed_seconds'],
+        )
+        self._notify_runtime_status(elapsed_seconds=result['elapsed_seconds'])
 
         self.context_logger.end_task(
             success=result['success'],
@@ -614,6 +648,7 @@ class ComputerUseAgent:
             messages.append(choice.message.model_dump())
             tool_calls = choice.message.tool_calls or []
             for tc in tool_calls:
+                self.activated_skills.add(tc.function.name.removeprefix('skill__'))
                 skill_content = load_skill(self.skills, tc.function.name)
                 messages.append({
                     'role': 'tool',
@@ -628,6 +663,7 @@ class ComputerUseAgent:
                 step=self.current_step,
                 skills=[tc.function.name for tc in tool_calls],
             )
+            self._notify_runtime_status()
 
         # 超出 skill 加载轮数上限，返回最后一次响应
         return response, (choice.message.content or '') if choice else ''
@@ -690,6 +726,20 @@ class ComputerUseAgent:
             usage_dict[field] = self._serialize_usage_value(value)
 
         return usage_dict or None
+
+    def _record_usage_total_tokens(self, usage: Optional[Dict[str, Any]]) -> None:
+        """记录最近一次模型调用的 total_tokens。"""
+        if not usage:
+            return
+
+        total_tokens = usage.get('total_tokens')
+        if total_tokens is None:
+            return
+
+        try:
+            self.last_usage_total_tokens = int(total_tokens)
+        except (TypeError, ValueError):
+            return
 
     def _serialize_usage_value(self, value: Any) -> Any:
         """将 usage 对象转换为可写入 JSON 的结构。"""
@@ -839,6 +889,77 @@ class ComputerUseAgent:
                 }
             ],
         }
+
+    def _estimate_context_bytes(self, messages: List[Dict[str, Any]]) -> int:
+        """估算消息上下文占用字节数，截图统一按固定 token 数计入。"""
+        sanitized_messages: List[Dict[str, Any]] = []
+        screenshot_count = 0
+
+        for message in messages:
+            sanitized_message: Dict[str, Any] = {'role': message.get('role')}
+            content = message.get('content')
+            if isinstance(content, list):
+                sanitized_content = []
+                for item in content:
+                    sanitized_item = dict(item)
+                    if sanitized_item.get('type') == 'image_url':
+                        screenshot_count += 1
+                        sanitized_item['image_url'] = {'url': '<estimated-screenshot>'}
+                    sanitized_content.append(sanitized_item)
+                sanitized_message['content'] = sanitized_content
+            else:
+                sanitized_message['content'] = content
+
+            for optional_key in ('tool_call_id', 'name', 'tool_calls'):
+                if optional_key in message:
+                    sanitized_message[optional_key] = message[optional_key]
+            sanitized_messages.append(sanitized_message)
+
+        serialized_bytes = len(
+            json.dumps(sanitized_messages, ensure_ascii=False).encode('utf-8')
+        )
+        screenshot_bytes = screenshot_count * SCREENSHOT_TOKEN_ESTIMATE * TOKEN_ESTIMATE_BYTES
+        return serialized_bytes + screenshot_bytes
+
+    def _estimate_next_context_bytes(self, instruction: str) -> int:
+        """估算下一轮模型调用会携带的上下文字节数。"""
+        placeholder_screenshot_message = {
+            'api_message': {
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'image_url',
+                        'image_url': {
+                            'url': '<estimated-screenshot>'
+                        }
+                    }
+                ],
+            },
+            'logged_screenshot_path': None,
+        }
+        messages, _, _, _ = self._build_request_messages(
+            instruction=instruction,
+            current_screenshot_message=placeholder_screenshot_message,
+        )
+        return self._estimate_context_bytes(messages)
+
+    def _build_runtime_status(self, elapsed_seconds: float) -> Dict[str, Any]:
+        """构建供 CLI 状态栏消费的运行时状态。"""
+        return {
+            'usage_total_tokens': self.last_usage_total_tokens,
+            'context_estimated_bytes': self.last_context_estimated_bytes,
+            'activated_skills': sorted(self.activated_skills),
+            'elapsed_seconds': elapsed_seconds,
+        }
+
+    def _notify_runtime_status(self, elapsed_seconds: float = 0.0) -> None:
+        """向外部回调最新的运行时状态。"""
+        if self.runtime_status_callback is None:
+            return
+
+        self.runtime_status_callback(
+            self._build_runtime_status(elapsed_seconds=elapsed_seconds)
+        )
 
     def _format_parse_failure_reason(self, error: Exception, response: str) -> str:
         """将解析失败原因整理成简洁单行文本。"""

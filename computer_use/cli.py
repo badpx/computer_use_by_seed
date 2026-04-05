@@ -1,7 +1,10 @@
 import argparse
+import contextlib
 import importlib
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -10,6 +13,208 @@ from .config import config
 
 
 DEFAULT_HISTORY_FILE = Path.home() / '.computer_use_history'
+CONTEXT_WINDOW_BYTES = 256 * 1024
+TOKEN_ESTIMATE_BYTES = 4
+
+
+class InteractiveStatusBar:
+    """交互模式输入栏底部状态栏。"""
+
+    def __init__(
+        self,
+        model: str,
+        thinking_mode: str,
+        reasoning_effort: str,
+        total_skills: int,
+    ):
+        self.model = model
+        self.thinking_mode = thinking_mode
+        self.reasoning_effort = reasoning_effort
+        self.total_skills = total_skills
+        self.active_skills = 0
+        self.context_percent = 0
+        self.completed_elapsed_seconds = 0.0
+        self.current_task_started_at: Optional[float] = None
+
+    def render(self) -> str:
+        """渲染底部状态栏文本。"""
+        return (
+            f"{self.model} {self.reasoning_effort} | "
+            f"Context: {self.context_percent}% | "
+            f"Skills: {self.active_skills}/{self.total_skills} | "
+            f"Duration: {self._format_elapsed_time(self._current_total_elapsed_seconds())}"
+        )
+
+    def update_live_status(self, runtime_status: Dict[str, Any]) -> None:
+        """根据运行时状态更新状态栏。"""
+        usage_total_tokens = runtime_status.get('usage_total_tokens')
+        if usage_total_tokens is not None:
+            try:
+                used_bytes = int(usage_total_tokens) * TOKEN_ESTIMATE_BYTES
+            except (TypeError, ValueError):
+                used_bytes = 0
+        else:
+            try:
+                used_bytes = int(runtime_status.get('context_estimated_bytes') or 0)
+            except (TypeError, ValueError):
+                used_bytes = 0
+
+        self.context_percent = self._to_percent(used_bytes)
+        self.active_skills = len(runtime_status.get('activated_skills') or [])
+
+    def start_task(self) -> None:
+        """标记当前任务开始。"""
+        self.current_task_started_at = time.perf_counter()
+        self.context_percent = 0
+        self.active_skills = 0
+
+    def finish_task(self, result: Dict[str, Any]) -> None:
+        """根据任务结果收尾状态栏。"""
+        runtime_status = result.get('runtime_status') or {}
+        self.update_live_status(runtime_status)
+
+        elapsed_seconds = result.get('elapsed_seconds')
+        try:
+            if elapsed_seconds is None:
+                elapsed = self._current_task_elapsed_seconds()
+            else:
+                elapsed = max(0.0, float(elapsed_seconds))
+        except (TypeError, ValueError):
+            elapsed = self._current_task_elapsed_seconds()
+
+        self.completed_elapsed_seconds += elapsed
+        self.current_task_started_at = None
+
+    def _current_total_elapsed_seconds(self) -> float:
+        """返回当前应展示的累计耗时。"""
+        return self.completed_elapsed_seconds + self._current_task_elapsed_seconds()
+
+    def _current_task_elapsed_seconds(self) -> float:
+        """返回当前正在执行任务的耗时。"""
+        if self.current_task_started_at is None:
+            return 0.0
+        return max(0.0, time.perf_counter() - self.current_task_started_at)
+
+    def _to_percent(self, used_bytes: int) -> int:
+        """将上下文字节数转换为百分比。"""
+        percent = round(max(0, used_bytes) * 100 / CONTEXT_WINDOW_BYTES)
+        return max(0, min(100, percent))
+
+    def _format_elapsed_time(self, elapsed_seconds: float) -> str:
+        """将累计耗时格式化为 HH:MM:SS。"""
+        total_seconds = max(0, int(elapsed_seconds))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
+
+
+class LiveStatusStreamProxy:
+    """将普通 stdout/stderr 输出与底部状态线协调渲染。"""
+
+    def __init__(self, renderer: 'LiveStatusRenderer'):
+        self.renderer = renderer
+
+    def write(self, text: str) -> int:
+        self.renderer.write_output(text)
+        return len(text)
+
+    def flush(self) -> None:
+        self.renderer.flush()
+
+    def isatty(self) -> bool:
+        return self.renderer.is_enabled()
+
+
+class LiveStatusRenderer:
+    """任务执行期间持续渲染底部状态线。"""
+
+    def __init__(self, status_provider, stream=None, refresh_interval: float = 1.0):
+        self.status_provider = status_provider
+        self.stream = stream or sys.stdout
+        self.refresh_interval = refresh_interval
+        self._lock = threading.Lock()
+        self._thread = None
+        self._running = False
+        self._status_visible = False
+
+    def is_enabled(self) -> bool:
+        """仅在真实 TTY 中启用状态线覆盖。"""
+        isatty = getattr(self.stream, 'isatty', None)
+        return bool(callable(isatty) and isatty())
+
+    def proxy(self) -> LiveStatusStreamProxy:
+        """返回给 redirect_stdout/redirect_stderr 使用的代理流。"""
+        return LiveStatusStreamProxy(self)
+
+    def start(self) -> None:
+        """开始持续刷新状态线。"""
+        if not self.is_enabled() or self._running:
+            return
+
+        self._running = True
+        with self._lock:
+            self._render_status_locked()
+            self.stream.flush()
+        self._thread = threading.Thread(
+            target=self._refresh_loop,
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        """停止刷新并清理状态线。"""
+        if not self._running:
+            return
+
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=self.refresh_interval + 0.2)
+            self._thread = None
+
+        with self._lock:
+            self._clear_status_locked()
+            self.stream.flush()
+
+    def write_output(self, text: str) -> None:
+        """在普通输出与底部状态线之间协调写入。"""
+        if not self._running:
+            self.stream.write(text)
+            self.stream.flush()
+            return
+
+        with self._lock:
+            self._clear_status_locked()
+            self.stream.write(text)
+            if text and not text.endswith(('\n', '\r')):
+                self.stream.write('\n')
+            self._render_status_locked()
+            self.stream.flush()
+
+    def flush(self) -> None:
+        """透传 flush。"""
+        self.stream.flush()
+
+    def _refresh_loop(self) -> None:
+        """定时刷新状态线，以更新执行中的耗时。"""
+        while self._running:
+            time.sleep(self.refresh_interval)
+            if not self._running:
+                break
+            with self._lock:
+                self._clear_status_locked()
+                self._render_status_locked()
+                self.stream.flush()
+
+    def _render_status_locked(self) -> None:
+        self.stream.write('\r\033[2K')
+        self.stream.write(self.status_provider())
+        self._status_visible = True
+
+    def _clear_status_locked(self) -> None:
+        if not self._status_visible:
+            return
+        self.stream.write('\r\033[2K')
+        self._status_visible = False
 
 
 def _resolve_history_file(history_file: Optional[Path] = None) -> Path:
@@ -41,10 +246,17 @@ def _create_prompt_session(history_file: Optional[Path] = None):
         return prompt_toolkit.PromptSession()
 
 
-def _read_instruction(prompt_session, prompt_text: str = '> ') -> str:
+def _read_instruction(
+    prompt_session,
+    prompt_text: str = '> ',
+    bottom_toolbar=None,
+) -> str:
     """从 prompt_toolkit 或内建 input 读取用户指令。"""
     if prompt_session is not None:
-        return prompt_session.prompt(prompt_text).strip()
+        return prompt_session.prompt(
+            prompt_text,
+            bottom_toolbar=bottom_toolbar,
+        ).strip()
 
     return input(prompt_text).strip()
 
@@ -147,16 +359,30 @@ def interactive_mode(
             natural_scroll=natural_scroll,
             skills_dir=skills_dir,
             enable_skills=enable_skills,
-            verbose=verbose
+            verbose=verbose,
+            runtime_status_callback=None,
         )
     except Exception as e:
         print(f"[错误] 初始化失败: {e}")
         return
+
+    status_bar = None
+    if prompt_session is not None:
+        status_bar = InteractiveStatusBar(
+            model=getattr(agent, 'model', config.model),
+            thinking_mode=getattr(agent, 'thinking_mode', config.thinking_mode),
+            reasoning_effort=getattr(agent, 'reasoning_effort', config.reasoning_effort),
+            total_skills=len(getattr(agent, 'skills', [])),
+        )
+        agent.runtime_status_callback = status_bar.update_live_status
     
     while True:
         try:
             # 获取用户输入
-            instruction = _read_instruction(prompt_session)
+            instruction = _read_instruction(
+                prompt_session,
+                bottom_toolbar=status_bar.render if status_bar is not None else None,
+            )
             
             # 检查退出命令
             if instruction.lower() in ['quit', 'exit', 'q']:
@@ -169,7 +395,23 @@ def interactive_mode(
             
             # 执行任务
             print(f"\n[开始执行] {instruction}")
-            result = agent.run(instruction)
+            if status_bar is not None:
+                status_bar.start_task()
+            renderer = LiveStatusRenderer(status_bar.render) if status_bar is not None else None
+            if renderer is not None:
+                renderer.start()
+            try:
+                if renderer is not None and renderer.is_enabled():
+                    proxy = renderer.proxy()
+                    with contextlib.redirect_stdout(proxy), contextlib.redirect_stderr(proxy):
+                        result = agent.run(instruction)
+                else:
+                    result = agent.run(instruction)
+            finally:
+                if renderer is not None:
+                    renderer.stop()
+            if status_bar is not None:
+                status_bar.finish_task(result)
             
             # 显示结果
             if result['success']:
@@ -190,6 +432,9 @@ def interactive_mode(
         except KeyboardInterrupt:
             print("\n\n[中断] 用户取消操作")
             continue
+        except EOFError:
+            print("\n感谢使用，再见！")
+            break
         except Exception as e:
             print(f"\n[错误] {e}")
             continue

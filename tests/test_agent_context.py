@@ -430,6 +430,8 @@ class AgentContextTests(unittest.TestCase):
         model_response = next(record for record in records if record['event'] == 'model_response')
         self.assertIsNone(model_response['usage'])
         self.assertEqual(model_response['reasoning'], '')
+        self.assertIsNone(result['runtime_status']['usage_total_tokens'])
+        self.assertGreater(result['runtime_status']['context_estimated_bytes'], 8000)
 
     def test_context_log_verbose_includes_full_messages(self):
         self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
@@ -599,6 +601,7 @@ class AgentContextTests(unittest.TestCase):
             result = agent.run('Open a browser')
 
         self.assertTrue(result['success'])
+        self.assertEqual(result['runtime_status']['activated_skills'], ['open-browser'])
         # Two API calls: one skill-load round + one final answer
         self.assertEqual(len(self.calls), 2)
         second_call_messages = self.calls[1]['messages']

@@ -16,8 +16,15 @@ class FakePromptSession:
         self.responses = list(responses or [])
         self.prompts = []
 
-    def prompt(self, text):
-        self.prompts.append(text)
+    def prompt(self, text, **kwargs):
+        toolbar = kwargs.get('bottom_toolbar')
+        rendered_toolbar = toolbar() if callable(toolbar) else toolbar
+        self.prompts.append(
+            {
+                'text': text,
+                'bottom_toolbar': rendered_toolbar,
+            }
+        )
         if not self.responses:
             raise EOFError('No fake prompt responses left')
         return self.responses.pop(0)
@@ -99,7 +106,11 @@ class CliPromptTests(unittest.TestCase):
 
         self.assertEqual(len(fake_agent_instances), 1)
         self.assertEqual(fake_agent_instances[0].run_calls, ['打开计算器'])
-        self.assertEqual(fake_session.prompts, ['> ', '> '])
+        self.assertEqual(
+            [prompt['text'] for prompt in fake_session.prompts],
+            ['> ', '> '],
+        )
+        self.assertIn('Context: 0%', fake_session.prompts[0]['bottom_toolbar'])
 
     def test_interactive_mode_falls_back_to_builtin_input_when_prompt_toolkit_is_unavailable(self):
         fake_agent_instances = []
@@ -130,6 +141,115 @@ class CliPromptTests(unittest.TestCase):
         self.assertEqual(len(fake_agent_instances), 1)
         self.assertEqual(fake_agent_instances[0].run_calls, ['粘贴的一长串指令'])
         self.assertEqual(mock_input.call_count, 2)
+
+    def test_interactive_mode_updates_status_bar_after_task(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.run_calls = []
+                self.model = 'fake-model'
+                self.thinking_mode = 'enabled'
+                self.reasoning_effort = 'high'
+                self.skills = [object(), object(), object()]
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                self.run_calls.append(instruction)
+                return {
+                    'success': True,
+                    'steps': [],
+                    'final_response': 'done',
+                    'elapsed_seconds': 12.5,
+                    'runtime_status': {
+                        'usage_total_tokens': 4096,
+                        'context_estimated_bytes': 0,
+                        'activated_skills': ['open-browser'],
+                    },
+                }
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+        fake_session = FakePromptSession(responses=['打开计算器', 'exit'])
+
+        with mock.patch.object(self.cli, 'ensure_supported_python'), mock.patch.object(
+            self.cli, '_create_prompt_session', return_value=fake_session
+        ):
+            self.cli.interactive_mode(verbose=False)
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        first_toolbar = fake_session.prompts[0]['bottom_toolbar']
+        second_toolbar = fake_session.prompts[1]['bottom_toolbar']
+        self.assertIn('fake-model high', first_toolbar)
+        self.assertIn('Context: 0%', first_toolbar)
+        self.assertIn('Skills: 0/3', first_toolbar)
+        self.assertIn('Duration: 00:00:00', first_toolbar)
+        self.assertIn('Context: 6%', second_toolbar)
+        self.assertIn('Skills: 1/3', second_toolbar)
+        self.assertIn('Duration: 00:00:12', second_toolbar)
+
+    def test_interactive_mode_exits_on_ctrl_d_with_prompt_toolkit(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.run_calls = []
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                self.run_calls.append(instruction)
+                return {'success': True, 'steps': [], 'final_response': 'done'}
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+        fake_session = FakePromptSession(responses=[])
+        output = io.StringIO()
+
+        with redirect_stdout(output), mock.patch.object(
+            self.cli, 'ensure_supported_python'
+        ), mock.patch.object(
+            self.cli, '_create_prompt_session', return_value=fake_session
+        ):
+            self.cli.interactive_mode(verbose=False)
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        self.assertEqual(fake_agent_instances[0].run_calls, [])
+        self.assertIn('感谢使用，再见！', output.getvalue())
+
+    def test_interactive_mode_exits_on_ctrl_d_with_builtin_input(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.run_calls = []
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                self.run_calls.append(instruction)
+                return {'success': True, 'steps': [], 'final_response': 'done'}
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+        output = io.StringIO()
+
+        with redirect_stdout(output), mock.patch.object(
+            self.cli, 'ensure_supported_python'
+        ), mock.patch.object(
+            self.cli, '_create_prompt_session', return_value=None
+        ), mock.patch.object(
+            builtins, 'input', side_effect=EOFError
+        ):
+            self.cli.interactive_mode(verbose=False)
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        self.assertEqual(fake_agent_instances[0].run_calls, [])
+        self.assertIn('感谢使用，再见！', output.getvalue())
 
     def test_single_task_mode_passes_context_window_options_to_agent(self):
         fake_agent_instances = []
