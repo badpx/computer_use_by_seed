@@ -3,7 +3,7 @@ import importlib
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .compat import ensure_supported_python
 from .config import config
@@ -63,6 +63,8 @@ def print_banner():
 def print_config_info(
     log_full_messages: bool = False,
     screenshot_size: Optional[int] = None,
+    enable_skills: Optional[bool] = None,
+    skill_paths: Optional[List[str]] = None,
 ):
     """打印调试用配置信息。"""
     print("[配置信息]")
@@ -79,6 +81,11 @@ def print_config_info(
     print(f"  上下文日志: {'是' if config.save_context_log else '否'}")
     print(f"  日志目录: {config.context_log_dir}")
     print(f"  完整上下文日志: {'是' if log_full_messages else '否'}")
+    effective_skills = config.enable_skills if enable_skills is None else enable_skills
+    print(f"  Skills: {'是' if effective_skills else '否'}")
+    effective_skill_paths = config.skill_paths if skill_paths is None else skill_paths
+    if effective_skills:
+        print(f"  Skills目录: {', '.join(effective_skill_paths) if effective_skill_paths else '(空)'}")
     print()
 
 
@@ -92,6 +99,10 @@ def interactive_mode(
     screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
     include_execution_feedback: Optional[bool] = None,
+    enable_skills: Optional[bool] = None,
+    skill_paths: Optional[List[str]] = None,
+    max_candidate_skills: Optional[int] = None,
+    max_skill_tool_rounds: Optional[int] = None,
     log_full_messages: bool = False,
     natural_scroll: Optional[bool] = None,
     verbose: bool = True
@@ -109,6 +120,10 @@ def interactive_mode(
         screenshot_size: 传给模型前的截图缩放尺寸
         max_context_screenshots: 多轮上下文截图窗口
         include_execution_feedback: 是否注入执行反馈
+        enable_skills: 是否启用 skills
+        skill_paths: skills 搜索路径
+        max_candidate_skills: 候选 skills 上限
+        max_skill_tool_rounds: 单步 skill tool 调用轮数上限
         log_full_messages: 是否在上下文日志中记录完整 messages
         natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
@@ -118,6 +133,8 @@ def interactive_mode(
         print_config_info(
             log_full_messages=log_full_messages,
             screenshot_size=screenshot_size,
+            enable_skills=enable_skills,
+            skill_paths=skill_paths,
         )
     
     print("[交互模式]")
@@ -143,6 +160,10 @@ def interactive_mode(
             screenshot_size=screenshot_size,
             max_context_screenshots=max_context_screenshots,
             include_execution_feedback=include_execution_feedback,
+            enable_skills=enable_skills,
+            skill_paths=skill_paths,
+            max_candidate_skills=max_candidate_skills,
+            max_skill_tool_rounds=max_skill_tool_rounds,
             log_full_messages=log_full_messages,
             natural_scroll=natural_scroll,
             verbose=verbose
@@ -204,6 +225,10 @@ def single_task_mode(
     screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
     include_execution_feedback: Optional[bool] = None,
+    enable_skills: Optional[bool] = None,
+    skill_paths: Optional[List[str]] = None,
+    max_candidate_skills: Optional[int] = None,
+    max_skill_tool_rounds: Optional[int] = None,
     log_full_messages: bool = False,
     natural_scroll: Optional[bool] = None,
     verbose: bool = True
@@ -222,6 +247,10 @@ def single_task_mode(
         screenshot_size: 传给模型前的截图缩放尺寸
         max_context_screenshots: 多轮上下文截图窗口
         include_execution_feedback: 是否注入执行反馈
+        enable_skills: 是否启用 skills
+        skill_paths: skills 搜索路径
+        max_candidate_skills: 候选 skills 上限
+        max_skill_tool_rounds: 单步 skill tool 调用轮数上限
         log_full_messages: 是否在上下文日志中记录完整 messages
         natural_scroll: 是否使用自然滚动
         verbose: 是否打印详细日志
@@ -235,6 +264,8 @@ def single_task_mode(
             print_config_info(
                 log_full_messages=log_full_messages,
                 screenshot_size=screenshot_size,
+                enable_skills=enable_skills,
+                skill_paths=skill_paths,
             )
         print(f"[任务] {instruction}\n")
 
@@ -252,6 +283,10 @@ def single_task_mode(
         screenshot_size=screenshot_size,
         max_context_screenshots=max_context_screenshots,
         include_execution_feedback=include_execution_feedback,
+        enable_skills=enable_skills,
+        skill_paths=skill_paths,
+        max_candidate_skills=max_candidate_skills,
+        max_skill_tool_rounds=max_skill_tool_rounds,
         log_full_messages=log_full_messages,
         natural_scroll=natural_scroll,
         verbose=verbose
@@ -367,6 +402,37 @@ def main():
         help='禁用执行反馈注入'
     )
 
+    skills_group = parser.add_mutually_exclusive_group()
+    skills_group.add_argument(
+        '--skills',
+        action='store_true',
+        help='启用 skills'
+    )
+    skills_group.add_argument(
+        '--no-skills',
+        action='store_true',
+        help='禁用 skills'
+    )
+
+    parser.add_argument(
+        '--skill-path',
+        action='append',
+        default=None,
+        help='增加一个 skills 搜索目录，可重复传入'
+    )
+
+    parser.add_argument(
+        '--max-candidate-skills',
+        type=int,
+        help='候选 skills 上限（默认从配置读取）'
+    )
+
+    parser.add_argument(
+        '--max-skill-tool-rounds',
+        type=int,
+        help='单步最多允许的 skill tool 调用轮数（默认从配置读取）'
+    )
+
     parser.add_argument(
         '--verbose',
         action='store_true',
@@ -441,6 +507,10 @@ def main():
     screenshot_size = None
     max_context_screenshots = None
     include_execution_feedback = None
+    enable_skills = None
+    skill_paths = None
+    max_candidate_skills = None
+    max_skill_tool_rounds = None
     log_full_messages = args.verbose
     if args.natural_scroll:
         natural_scroll = True
@@ -463,6 +533,16 @@ def main():
         include_execution_feedback = True
     elif args.no_execution_feedback:
         include_execution_feedback = False
+    if args.skills:
+        enable_skills = True
+    elif args.no_skills:
+        enable_skills = False
+    if args.skill_path:
+        skill_paths = args.skill_path
+    if args.max_candidate_skills is not None:
+        max_candidate_skills = args.max_candidate_skills
+    if args.max_skill_tool_rounds is not None:
+        max_skill_tool_rounds = args.max_skill_tool_rounds
     
     try:
         if args.instruction:
@@ -478,6 +558,10 @@ def main():
                 screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
                 include_execution_feedback=include_execution_feedback,
+                enable_skills=enable_skills,
+                skill_paths=skill_paths,
+                max_candidate_skills=max_candidate_skills,
+                max_skill_tool_rounds=max_skill_tool_rounds,
                 log_full_messages=log_full_messages,
                 natural_scroll=natural_scroll,
                 verbose=verbose
@@ -497,6 +581,10 @@ def main():
                 screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
                 include_execution_feedback=include_execution_feedback,
+                enable_skills=enable_skills,
+                skill_paths=skill_paths,
+                max_candidate_skills=max_candidate_skills,
+                max_skill_tool_rounds=max_skill_tool_rounds,
                 log_full_messages=log_full_messages,
                 natural_scroll=natural_scroll,
                 verbose=verbose

@@ -156,6 +156,10 @@ class CliPromptTests(unittest.TestCase):
                 screenshot_size=1024,
                 max_context_screenshots=3,
                 include_execution_feedback=False,
+                enable_skills=True,
+                skill_paths=['/tmp/skills-a', '/tmp/skills-b'],
+                max_candidate_skills=2,
+                max_skill_tool_rounds=4,
                 log_full_messages=True,
                 verbose=False,
             )
@@ -167,6 +171,13 @@ class CliPromptTests(unittest.TestCase):
             fake_agent_instances[0].kwargs['include_execution_feedback'],
             False,
         )
+        self.assertEqual(fake_agent_instances[0].kwargs['enable_skills'], True)
+        self.assertEqual(
+            fake_agent_instances[0].kwargs['skill_paths'],
+            ['/tmp/skills-a', '/tmp/skills-b'],
+        )
+        self.assertEqual(fake_agent_instances[0].kwargs['max_candidate_skills'], 2)
+        self.assertEqual(fake_agent_instances[0].kwargs['max_skill_tool_rounds'], 4)
         self.assertEqual(fake_agent_instances[0].kwargs['log_full_messages'], True)
 
     def test_single_task_mode_prints_config_info_only_in_debug_mode(self):

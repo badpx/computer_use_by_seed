@@ -6,8 +6,10 @@
 import os
 import subprocess
 import sys
-from typing import Optional
+from typing import List, Optional
 from pathlib import Path
+
+from .skills import parse_skill_paths
 
 THINKING_MODES = ('enabled', 'disabled', 'auto')
 REASONING_EFFORTS = ('minimal', 'low', 'medium', 'high')
@@ -92,6 +94,10 @@ class Config:
         'SCREENSHOT_SIZE': '',
         'MAX_CONTEXT_SCREENSHOTS': '5',
         'INCLUDE_EXECUTION_FEEDBACK': 'false',
+        'ENABLE_SKILLS': 'true',
+        'SKILL_PATHS': '~/.skills:./.skills',
+        'MAX_CANDIDATE_SKILLS': '5',
+        'MAX_SKILL_TOOL_ROUNDS': '8',
         'MAX_PIXELS': '12845056',  # 16384 * 28 * 28
         'MIN_PIXELS': '78400',     # 100 * 28 * 28
     }
@@ -298,6 +304,32 @@ class Config:
     def include_execution_feedback(self) -> bool:
         """是否将执行反馈注入多轮上下文。"""
         return self.get_bool('INCLUDE_EXECUTION_FEEDBACK', False)
+
+    @property
+    def enable_skills(self) -> bool:
+        """是否启用 skills。"""
+        return self.get_bool('ENABLE_SKILLS', True)
+
+    @property
+    def skill_paths(self) -> List[str]:
+        """skills 搜索路径。"""
+        return parse_skill_paths(self._config.get('SKILL_PATHS'))
+
+    @property
+    def max_candidate_skills(self) -> int:
+        """候选 skills 上限。"""
+        count = self.get_int('MAX_CANDIDATE_SKILLS', 5)
+        if count < 0:
+            return 5
+        return count
+
+    @property
+    def max_skill_tool_rounds(self) -> int:
+        """单步最多允许的 skill tool 调用轮数。"""
+        count = self.get_int('MAX_SKILL_TOOL_ROUNDS', 8)
+        if count < 0:
+            return 8
+        return count
 
     @property
     def thinking_mode(self) -> str:

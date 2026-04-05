@@ -6,8 +6,9 @@
 import io
 import time
 import base64
+import json
 from collections import deque
-from typing import Deque, Dict, Any, List, Optional
+from typing import Deque, Dict, Any, List, Optional, Sequence
 
 from volcenginesdkarkruntime import Ark
 
@@ -17,6 +18,15 @@ from .action_parser import parse_action
 from .action_executor import ActionExecutor
 from .logging_utils import ContextLogger
 from .prompts import COMPUTER_USE_DOUBAO
+from .skills import (
+    SkillDefinition,
+    SkillRegistry,
+    SkillRuntime,
+    build_skill_tools,
+    build_skills_prompt_section,
+    parse_skill_paths,
+    select_candidate_skills,
+)
 
 
 class ComputerUseAgent:
@@ -38,6 +48,10 @@ class ComputerUseAgent:
         screenshot_size: Optional[int] = None,
         max_context_screenshots: Optional[int] = None,
         include_execution_feedback: Optional[bool] = None,
+        enable_skills: Optional[bool] = None,
+        skill_paths: Optional[Sequence[str]] = None,
+        max_candidate_skills: Optional[int] = None,
+        max_skill_tool_rounds: Optional[int] = None,
         log_full_messages: bool = False,
         max_steps: Optional[int] = None,
         natural_scroll: Optional[bool] = None,
@@ -61,6 +75,10 @@ class ComputerUseAgent:
             screenshot_size: 传给模型前的截图缩放尺寸，仅支持正方形
             max_context_screenshots: 多轮上下文中最多保留的截图数量（含当前轮）
             include_execution_feedback: 是否注入历史执行反馈
+            enable_skills: 是否启用 skills
+            skill_paths: skills 搜索路径
+            max_candidate_skills: 候选 skills 上限
+            max_skill_tool_rounds: 单步最多允许的 skill tool 调用轮数
             log_full_messages: 是否在上下文日志中记录完整 messages
             max_steps: 最大执行步数，默认从配置读取
             natural_scroll: 是否使用自然滚动
@@ -110,6 +128,24 @@ class ComputerUseAgent:
             if include_execution_feedback is not None
             else config.include_execution_feedback
         )
+        self.enable_skills = (
+            enable_skills if enable_skills is not None else config.enable_skills
+        )
+        self.skill_paths = (
+            config.skill_paths if skill_paths is None else parse_skill_paths(skill_paths)
+        )
+        self.max_candidate_skills = (
+            config.max_candidate_skills
+            if max_candidate_skills is None else int(max_candidate_skills)
+        )
+        if self.max_candidate_skills < 0:
+            self.max_candidate_skills = config.max_candidate_skills
+        self.max_skill_tool_rounds = (
+            config.max_skill_tool_rounds
+            if max_skill_tool_rounds is None else int(max_skill_tool_rounds)
+        )
+        if self.max_skill_tool_rounds < 0:
+            self.max_skill_tool_rounds = config.max_skill_tool_rounds
         self.log_full_messages = log_full_messages
         self.max_steps = max_steps if max_steps is not None else config.max_steps
         self.natural_scroll = (
@@ -135,6 +171,8 @@ class ComputerUseAgent:
         self.assistant_history: List[Dict[str, Any]] = []
         self.execution_feedback_history: List[Optional[Dict[str, Any]]] = []
         self.recent_screenshot_messages: Deque[Dict[str, Any]] = deque()
+        self.skill_registry = SkillRegistry(self.skill_paths)
+        self.skill_runtime = SkillRuntime(self.skill_registry)
 
         # 上下文日志
         self.context_logger = ContextLogger(
@@ -180,10 +218,20 @@ class ComputerUseAgent:
         self.execution_feedback_history = []
         self.recent_screenshot_messages = deque()
         self.current_step = 0
+        self.skill_registry = SkillRegistry(self.skill_paths)
+        self.skill_runtime = SkillRuntime(self.skill_registry)
         self.context_logger = ContextLogger(
             enabled=self.save_context_log,
             log_dir=self.context_log_dir,
         )
+
+        candidate_skills: List[SkillDefinition] = []
+        if self.enable_skills and self.max_candidate_skills > 0:
+            candidate_skills = select_candidate_skills(
+                instruction=instruction,
+                registry=self.skill_registry,
+                limit=self.max_candidate_skills,
+            )
 
         self.context_logger.start_task(
             instruction=instruction,
@@ -197,6 +245,11 @@ class ComputerUseAgent:
             screenshot_size=self.screenshot_size,
             max_context_screenshots=self.max_context_screenshots,
             include_execution_feedback=self.include_execution_feedback,
+            skills_enabled=self.enable_skills,
+            skill_paths=self.skill_paths,
+            candidate_skill_names=[skill.name for skill in candidate_skills],
+            max_candidate_skills=self.max_candidate_skills,
+            max_skill_tool_rounds=self.max_skill_tool_rounds,
             log_full_messages=self.log_full_messages,
         )
         result['context_log_path'] = self.context_logger.current_log_path
@@ -233,47 +286,58 @@ class ComputerUseAgent:
                     self._build_request_messages(
                         instruction=instruction,
                         current_screenshot_message=current_screenshot_message,
+                        candidate_skills=candidate_skills,
                     )
                 )
-
-                model_call_payload = {
-                    'instruction': instruction,
-                    'step': self.current_step,
-                    'model': self.model,
-                    'thinking_mode': self.thinking_mode,
-                    'reasoning_effort': self.reasoning_effort,
-                    'coordinate_space': self.coordinate_space,
-                    'coordinate_scale': self.coordinate_scale,
-                    'max_context_screenshots': self.max_context_screenshots,
-                    'include_execution_feedback': self.include_execution_feedback,
-                    'screenshot_resize': self.screenshot_size,
-                    'text_input': text_input,
-                    'message_summary': message_summary,
-                    'retained_screenshot_count': retained_screenshot_count,
-                    'screenshot_path': screenshot_path,
-                    'screenshot_size': [model_img_width, model_img_height],
-                    'original_screenshot_size': [img_width, img_height],
-                }
-                if self.log_full_messages:
-                    model_call_payload['messages'] = messages
-
-                self.context_logger.log_event(
-                    'model_call',
-                    **model_call_payload,
-                )
-
-                response_obj, response = self._call_model(
-                    messages=messages,
-                )
-
-                self.context_logger.log_event(
-                    'model_response',
-                    instruction=instruction,
-                    step=self.current_step,
-                    **self._build_logged_model_response(response_obj),
-                    raw_response=response,
-                    usage=self._extract_usage(response_obj),
-                )
+                try:
+                    response_obj, response, used_skills = self._run_model_with_skills(
+                        messages=messages,
+                        instruction=instruction,
+                        screenshot_path=screenshot_path,
+                        model_image_size=[model_img_width, model_img_height],
+                        original_image_size=[img_width, img_height],
+                        text_input=text_input,
+                        message_summary=message_summary,
+                        retained_screenshot_count=retained_screenshot_count,
+                        candidate_skills=candidate_skills,
+                    )
+                except Exception as e:
+                    failure_reason = str(e)
+                    step_elapsed_seconds = time.perf_counter() - step_start_time
+                    step_record = self._build_step_record(
+                        step=self.current_step,
+                        screenshot_path=screenshot_path,
+                        model_input=text_input,
+                        response='',
+                        action=None,
+                        thought_summary='',
+                        execution_status='failed',
+                        execution_result=None,
+                        failure_reason=failure_reason,
+                        elapsed_seconds=step_elapsed_seconds,
+                        used_skills=[],
+                    )
+                    result['steps'].append(step_record)
+                    self._record_history_entry(step_record, parsed_action='')
+                    self.context_logger.log_event(
+                        'step_result',
+                        instruction=instruction,
+                        step=self.current_step,
+                        thought_summary='',
+                        parsed_action='',
+                        execution_status='failed',
+                        execution_result=None,
+                        failure_reason=failure_reason,
+                        used_skills=[],
+                        elapsed_seconds=step_record['elapsed_seconds'],
+                        elapsed_time_text=step_record['elapsed_time_text'],
+                    )
+                    if self.verbose:
+                        print(f"  模型调用失败: {failure_reason}")
+                        print(
+                            f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}"
+                        )
+                    continue
                 
                 if self.verbose:
                     print(f"  模型响应:\n{response}")
@@ -297,6 +361,7 @@ class ComputerUseAgent:
                         execution_result=None,
                         failure_reason=failure_reason,
                         elapsed_seconds=step_elapsed_seconds,
+                        used_skills=used_skills,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action='')
@@ -315,6 +380,7 @@ class ComputerUseAgent:
                         execution_status='failed',
                         execution_result=None,
                         failure_reason=failure_reason,
+                        used_skills=used_skills,
                         elapsed_seconds=step_record['elapsed_seconds'],
                         elapsed_time_text=step_record['elapsed_time_text'],
                     )
@@ -344,6 +410,7 @@ class ComputerUseAgent:
                         execution_result=result['final_response'],
                         failure_reason=None,
                         elapsed_seconds=step_elapsed_seconds,
+                        used_skills=used_skills,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -356,6 +423,7 @@ class ComputerUseAgent:
                         execution_status='finished',
                         execution_result=result['final_response'],
                         failure_reason=None,
+                        used_skills=used_skills,
                         elapsed_seconds=step_record['elapsed_seconds'],
                         elapsed_time_text=step_record['elapsed_time_text'],
                     )
@@ -402,6 +470,7 @@ class ComputerUseAgent:
                         execution_result=None,
                         failure_reason=failure_reason,
                         elapsed_seconds=step_elapsed_seconds,
+                        used_skills=used_skills,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -420,6 +489,7 @@ class ComputerUseAgent:
                         execution_status='failed',
                         execution_result=None,
                         failure_reason=failure_reason,
+                        used_skills=used_skills,
                         elapsed_seconds=step_record['elapsed_seconds'],
                         elapsed_time_text=step_record['elapsed_time_text'],
                     )
@@ -444,6 +514,7 @@ class ComputerUseAgent:
                         execution_result='DONE',
                         failure_reason=None,
                         elapsed_seconds=step_elapsed_seconds,
+                        used_skills=used_skills,
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -456,6 +527,7 @@ class ComputerUseAgent:
                         execution_status='finished',
                         execution_result='DONE',
                         failure_reason=None,
+                        used_skills=used_skills,
                         elapsed_seconds=step_record['elapsed_seconds'],
                         elapsed_time_text=step_record['elapsed_time_text'],
                     )
@@ -482,6 +554,7 @@ class ComputerUseAgent:
                     execution_result=exec_result,
                     failure_reason=None,
                     elapsed_seconds=step_elapsed_seconds,
+                    used_skills=used_skills,
                 )
                 result['steps'].append(step_record)
                 self._record_history_entry(step_record, parsed_action=parsed_action)
@@ -500,6 +573,7 @@ class ComputerUseAgent:
                     execution_status='success',
                     execution_result=exec_result,
                     failure_reason=None,
+                    used_skills=used_skills,
                     elapsed_seconds=step_record['elapsed_seconds'],
                     elapsed_time_text=step_record['elapsed_time_text'],
                 )
@@ -551,6 +625,11 @@ class ComputerUseAgent:
             print(f"  模型截图尺寸: {self.screenshot_size} x {self.screenshot_size}")
         print(f"  上下文截图窗口: {self.max_context_screenshots}")
         print(f"  注入执行反馈: {'启用' if self.include_execution_feedback else '禁用'}")
+        print(f"  Skills: {'启用' if self.enable_skills else '禁用'}")
+        if self.enable_skills:
+            print(f"  Skills目录: {', '.join(self.skill_paths) if self.skill_paths else '(空)'}")
+            print(f"  候选Skills上限: {self.max_candidate_skills}")
+            print(f"  Skill工具轮数上限: {self.max_skill_tool_rounds}")
         print(f"  日志完整上下文: {'启用' if self.log_full_messages else '禁用'}")
         print(f"  自然滚动: {'启用' if self.natural_scroll else '禁用'}")
         print(f"  上下文日志: {'启用' if self.save_context_log else '禁用'}")
@@ -559,6 +638,7 @@ class ComputerUseAgent:
     def _call_model(
         self,
         messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[Any, str]:
         """
         调用模型进行推理
@@ -570,23 +650,33 @@ class ComputerUseAgent:
             tuple[Any, str]: (完整响应对象, 模型响应文本)
         """
         # 调用模型
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            thinking={
+        request_kwargs = {
+            'model': self.model,
+            'messages': messages,
+            'temperature': self.temperature,
+            'thinking': {
                 'type': self.thinking_mode,
             },
-            reasoning_effort=self.reasoning_effort,
-        )
-        
-        return response, response.choices[0].message.content
+            'reasoning_effort': self.reasoning_effort,
+        }
+        if tools:
+            request_kwargs['tools'] = tools
 
-    def _build_system_prompt(self, instruction: str) -> str:
+        response = self.client.chat.completions.create(**request_kwargs)
+
+        message = response.choices[0].message
+        return response, getattr(message, 'content', '') or ''
+
+    def _build_system_prompt(
+        self,
+        instruction: str,
+        candidate_skills: Sequence[SkillDefinition],
+    ) -> str:
         """构建单次请求共用的 system prompt。"""
         return COMPUTER_USE_DOUBAO.format(
             instruction=instruction,
             language=self.language,
+            skills_prompt=build_skills_prompt_section(candidate_skills),
         )
 
     def _prepare_model_screenshot(self, screenshot: Any) -> Any:
@@ -721,6 +811,7 @@ class ComputerUseAgent:
         self,
         instruction: str,
         current_screenshot_message: Dict[str, Any],
+        candidate_skills: Sequence[SkillDefinition],
     ) -> tuple[List[Dict[str, Any]], str, int]:
         """组装发送给模型的 messages。"""
         retained_screenshot_items = list(self.recent_screenshot_messages)
@@ -730,7 +821,7 @@ class ComputerUseAgent:
         messages: List[Dict[str, Any]] = [
             {
                 'role': 'system',
-                'content': self._build_system_prompt(instruction),
+                'content': self._build_system_prompt(instruction, candidate_skills),
             }
         ]
 
@@ -754,6 +845,221 @@ class ComputerUseAgent:
             f'{retained_feedback_count} feedback + {retained_screenshot_count} screenshots'
         )
         return messages, message_summary, retained_screenshot_count
+
+    def _run_model_with_skills(
+        self,
+        messages: List[Dict[str, Any]],
+        instruction: str,
+        screenshot_path: Optional[str],
+        model_image_size: List[int],
+        original_image_size: List[int],
+        text_input: str,
+        message_summary: str,
+        retained_screenshot_count: int,
+        candidate_skills: Sequence[SkillDefinition],
+    ) -> tuple[Any, str, List[str]]:
+        """执行带 skills function calling 的模型调用循环。"""
+        tools = build_skill_tools(candidate_skills) if self.enable_skills else []
+        current_messages = list(messages)
+        used_skills = set()
+        skill_tool_round = 0
+
+        while True:
+            model_call_payload = {
+                'instruction': instruction,
+                'step': self.current_step,
+                'model': self.model,
+                'thinking_mode': self.thinking_mode,
+                'reasoning_effort': self.reasoning_effort,
+                'coordinate_space': self.coordinate_space,
+                'coordinate_scale': self.coordinate_scale,
+                'max_context_screenshots': self.max_context_screenshots,
+                'include_execution_feedback': self.include_execution_feedback,
+                'skills_available': bool(tools),
+                'candidate_skill_names': [skill.name for skill in candidate_skills],
+                'skill_tool_round': skill_tool_round,
+                'screenshot_resize': self.screenshot_size,
+                'text_input': text_input,
+                'message_summary': self._summarize_messages(
+                    current_messages,
+                    default_summary=message_summary,
+                ),
+                'retained_screenshot_count': retained_screenshot_count,
+                'screenshot_path': screenshot_path,
+                'screenshot_size': model_image_size,
+                'original_screenshot_size': original_image_size,
+            }
+            if self.log_full_messages:
+                model_call_payload['messages'] = current_messages
+
+            self.context_logger.log_event(
+                'model_call',
+                **model_call_payload,
+            )
+
+            response_obj, response = self._call_model(
+                messages=current_messages,
+                tools=tools,
+            )
+            finish_reason = self._get_finish_reason(response_obj)
+            tool_calls = self._get_tool_calls(response_obj)
+
+            self.context_logger.log_event(
+                'model_response',
+                instruction=instruction,
+                step=self.current_step,
+                finish_reason=finish_reason,
+                tool_call_count=len(tool_calls),
+                **self._build_logged_model_response(response_obj),
+                raw_response=response,
+                usage=self._extract_usage(response_obj),
+            )
+
+            if finish_reason != 'tool_calls':
+                return response_obj, response, sorted(used_skills)
+
+            if not tools:
+                raise ValueError('模型请求了 tool_calls，但当前未启用 skills tools')
+            if skill_tool_round >= self.max_skill_tool_rounds:
+                raise ValueError(
+                    f'skill tool 调用超过最大轮数限制 ({self.max_skill_tool_rounds})'
+                )
+
+            choice_message = getattr(response_obj.choices[0], 'message', None)
+            current_messages.append(self._serialize_assistant_message(choice_message))
+
+            for tool_call in tool_calls:
+                tool_name = tool_call['function']['name']
+                arguments = self._parse_tool_arguments(tool_call['function']['arguments'])
+                self.context_logger.log_event(
+                    'skill_tool_call',
+                    instruction=instruction,
+                    step=self.current_step,
+                    skill_tool_round=skill_tool_round + 1,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                )
+                tool_content, tool_payload = self.skill_runtime.execute_tool_call(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    candidate_skills=candidate_skills,
+                )
+                skill_name = str(tool_payload.get('skill_name') or '').strip()
+                if skill_name:
+                    used_skills.add(skill_name)
+                self.context_logger.log_event(
+                    'skill_tool_result',
+                    instruction=instruction,
+                    step=self.current_step,
+                    skill_tool_round=skill_tool_round + 1,
+                    tool_name=tool_name,
+                    skill_name=skill_name or None,
+                    resource_path=tool_payload.get('resource_path'),
+                    content_preview=self._truncate_text(tool_content, max_length=500),
+                )
+                current_messages.append(
+                    {
+                        'role': 'tool',
+                        'content': tool_content,
+                        'tool_call_id': tool_call['id'],
+                    }
+                )
+
+            skill_tool_round += 1
+
+    def _summarize_messages(
+        self,
+        messages: Sequence[Dict[str, Any]],
+        default_summary: Optional[str] = None,
+    ) -> str:
+        """生成简洁的 messages 摘要。"""
+        tool_count = sum(1 for message in messages if message.get('role') == 'tool')
+        if default_summary and tool_count == 0:
+            return default_summary
+
+        system_count = sum(1 for message in messages if message.get('role') == 'system')
+        assistant_count = sum(1 for message in messages if message.get('role') == 'assistant')
+        screenshot_count = sum(
+            1
+            for message in messages
+            if isinstance(message.get('content'), list)
+        )
+        user_text_count = sum(
+            1
+            for message in messages
+            if message.get('role') == 'user' and isinstance(message.get('content'), str)
+        )
+        return (
+            f'{system_count} system + {assistant_count} assistant + '
+            f'{user_text_count} user_text + {screenshot_count} screenshots + '
+            f'{tool_count} tool'
+        )
+
+    def _get_finish_reason(self, response_obj: Any) -> str:
+        choices = getattr(response_obj, 'choices', None) or []
+        if not choices:
+            return ''
+        return getattr(choices[0], 'finish_reason', '') or ''
+
+    def _get_tool_calls(self, response_obj: Any) -> List[Dict[str, Any]]:
+        choices = getattr(response_obj, 'choices', None) or []
+        if not choices:
+            return []
+        message = getattr(choices[0], 'message', None)
+        if message is None:
+            return []
+
+        tool_calls = getattr(message, 'tool_calls', None) or []
+        serialized = []
+        for tool_call in tool_calls:
+            function = getattr(tool_call, 'function', None)
+            serialized.append(
+                {
+                    'id': getattr(tool_call, 'id', ''),
+                    'type': getattr(tool_call, 'type', 'function') or 'function',
+                    'function': {
+                        'name': getattr(function, 'name', ''),
+                        'arguments': getattr(function, 'arguments', '') or '',
+                    },
+                }
+            )
+        return serialized
+
+    def _serialize_assistant_message(self, message: Any) -> Dict[str, Any]:
+        """将带 tool_calls 的 assistant message 转成普通 dict。"""
+        serialized: Dict[str, Any] = {
+            'role': getattr(message, 'role', 'assistant') or 'assistant',
+            'content': getattr(message, 'content', '') or '',
+        }
+        raw_tool_calls = getattr(message, 'tool_calls', None) or []
+        tool_calls = []
+        for tool_call in raw_tool_calls:
+            function = getattr(tool_call, 'function', None)
+            tool_calls.append(
+                {
+                    'id': getattr(tool_call, 'id', ''),
+                    'type': getattr(tool_call, 'type', 'function') or 'function',
+                    'function': {
+                        'name': getattr(function, 'name', ''),
+                        'arguments': getattr(function, 'arguments', '') or '',
+                    },
+                }
+            )
+        if tool_calls:
+            serialized['tool_calls'] = tool_calls
+        return serialized
+
+    def _parse_tool_arguments(self, arguments: str) -> Dict[str, Any]:
+        """解析 function call 参数。"""
+        if not arguments:
+            return {}
+        try:
+            parsed = json.loads(arguments)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f'无法解析 tool 参数: {arguments}') from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(f'tool 参数必须是 JSON object: {arguments}')
+        return parsed
 
     def _format_parse_failure_reason(self, error: Exception, response: str) -> str:
         """将解析失败原因整理成简洁单行文本。"""
@@ -795,6 +1101,7 @@ class ComputerUseAgent:
         execution_result: Optional[str],
         failure_reason: Optional[str],
         elapsed_seconds: float,
+        used_skills: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """构建返回结果中的单步记录。"""
         return {
@@ -809,6 +1116,7 @@ class ComputerUseAgent:
             'failure_reason': failure_reason,
             'elapsed_seconds': elapsed_seconds,
             'elapsed_time_text': self._format_elapsed_time(elapsed_seconds),
+            'used_skills': list(used_skills or []),
         }
 
     def _record_history_entry(
@@ -826,6 +1134,7 @@ class ComputerUseAgent:
                 'execution_status': step_record['execution_status'],
                 'execution_result': step_record['execution_result'],
                 'failure_reason': step_record['failure_reason'],
+                'used_skills': step_record.get('used_skills', []),
             }
         )
 

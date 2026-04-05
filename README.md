@@ -8,6 +8,7 @@
 - 🖱️ **丰富操作支持** - 点击、输入、滚动、拖拽、热键等
 - 📸 **截图保存** - 支持开关配置，便于调试
 - 🧾 **上下文日志** - 保存每轮模型输入与执行结果，便于回放调试
+- 🧩 **基础 Skills 支持** - 支持本地 skills 自动发现，并通过 function call 按需加载说明与资源
 - ⚙️ **灵活配置** - 支持环境变量和配置文件
 - 💻 **CLI 交互** - 支持交互式和单次任务模式
 
@@ -108,6 +109,10 @@ python -m computer_use "打开浏览器"
 | 模型截图尺寸 | `SCREENSHOT_SIZE` | - | 传给模型前的截图宽高，仅支持相同宽高值，例如 `1024` 表示缩放为 `1024x1024` |
 | 上下文截图窗口 | `MAX_CONTEXT_SCREENSHOTS` | `5` | 多轮上下文中最多保留的截图数量，包含当前轮 |
 | 注入执行反馈 | `INCLUDE_EXECUTION_FEEDBACK` | `false` | 是否将历史执行结果和失败原因注入多轮上下文 |
+| 启用 Skills | `ENABLE_SKILLS` | `true` | 是否启用本地 skills 自动发现与按需加载 |
+| Skills 路径 | `SKILL_PATHS` | `~/.skills:./.skills` | skills 搜索路径，使用系统路径分隔符 |
+| 候选 Skills 上限 | `MAX_CANDIDATE_SKILLS` | `5` | 每个任务最多保留多少个候选 skills |
+| Skill 工具轮数上限 | `MAX_SKILL_TOOL_ROUNDS` | `8` | 单步最多允许的 skill tool 调用轮数 |
 | 最大步数 | `MAX_STEPS` | `20` | 最大执行步数 |
 | 保存截图 | `SAVE_SCREENSHOT` | `false` | 是否保存截图 |
 | 截图目录 | `SCREENSHOT_DIR` | `./screenshots` | 截图保存目录 |
@@ -132,6 +137,10 @@ COORDINATE_SCALE=1000
 SCREENSHOT_SIZE=
 MAX_CONTEXT_SCREENSHOTS=5
 INCLUDE_EXECUTION_FEEDBACK=false
+ENABLE_SKILLS=true
+SKILL_PATHS=~/.skills:./.skills
+MAX_CANDIDATE_SKILLS=5
+MAX_SKILL_TOOL_ROUNDS=8
 MAX_STEPS=20
 
 # 截图配置
@@ -170,6 +179,53 @@ CONTEXT_LOG_DIR=./logs
 - 默认只打印 `[生效参数]`，用于展示本次运行真正生效的参数
 - 传 `--verbose` 时，额外打印 `[配置信息]`，用于展示基础环境和调试相关配置
 
+## Skills
+
+工具首版支持本地 skills 自动发现，并用 function call 做渐进式披露。skills 默认会从以下两个目录扫描：
+
+- `~/.skills`
+- `./.skills`
+
+同名 skill 时，项目本地目录优先级更高。
+
+### Skill 目录结构
+
+```text
+.skills/
+  browser_helper/
+    SKILL.md
+    resources/
+      tips.md
+```
+
+### `SKILL.md` 示例
+
+```md
+---
+name: browser_helper
+description: Help with browser automation tasks
+tags:
+  - browser
+  - page
+triggers:
+  - browser_helper
+---
+
+Open the target page first, then inspect the visible UI before acting.
+```
+
+首版支持：
+
+- `SKILL.md` frontmatter 元数据
+- `resources/` 下的文本资源按需读取
+- 模型通过 function call 请求 `load_skill` 和 `read_skill_resource`
+
+首版暂不支持：
+
+- 执行 skill 自带脚本
+- 远程资源
+- skill 之间依赖
+
 ## CLI 参数
 
 ```
@@ -196,6 +252,11 @@ python -m computer_use [指令] [选项]
 | `--max-context-screenshots <count>` | - | 设置多轮上下文中保留的截图数量，包含当前轮 |
 | `--include-execution-feedback` | - | 启用执行反馈注入 |
 | `--no-execution-feedback` | - | 禁用执行反馈注入 |
+| `--skills` | - | 显式启用 skills |
+| `--no-skills` | - | 显式禁用 skills |
+| `--skill-path <path>` | - | 增加一个 skills 搜索目录，可重复传入 |
+| `--max-candidate-skills <count>` | - | 设置候选 skills 上限 |
+| `--max-skill-tool-rounds <count>` | - | 设置单步 skill tool 调用轮数上限 |
 | `--verbose` | - | 在上下文日志的 `model_call` 事件中记录完整 `messages` |
 | `--save-screenshot` | - | 启用截图保存 |
 | `--no-screenshot` | - | 禁用截图保存 |
@@ -229,6 +290,12 @@ python -m computer_use "分析页面状态" --screenshot-size 1024
 
 # 关闭执行反馈注入
 python -m computer_use "打开浏览器" --no-execution-feedback
+
+# 指定 skills 搜索目录
+python -m computer_use "分析页面状态" --skill-path ./.skills --skill-path ~/.skills
+
+# 临时禁用 skills
+python -m computer_use "分析页面状态" --no-skills
 
 # 在上下文日志中记录完整 messages
 python -m computer_use "分析页面状态" --verbose

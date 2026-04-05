@@ -34,6 +34,8 @@ finished(content='xxx') # Use escape characters \\', \\", and \\n in content par
 - The latest image attached in the conversation is the current screenshot. Earlier image messages, if present, are older screenshots for reference only.
 - If a previous step failed, adjust your next action using the recorded failure reason.
 
+{skills_prompt}
+
 ## User Instruction
 {instruction}
 '''

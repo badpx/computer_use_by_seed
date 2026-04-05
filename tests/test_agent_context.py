@@ -27,12 +27,34 @@ class FakeScreenshot:
 
 
 class FakeResponse:
-    def __init__(self, content, usage=None, reasoning_content=None):
+    def __init__(
+        self,
+        content,
+        usage=None,
+        reasoning_content=None,
+        finish_reason='stop',
+        tool_calls=None,
+    ):
+        tool_call_objects = []
+        for tool_call in tool_calls or []:
+            function = tool_call.get('function', {})
+            tool_call_objects.append(
+                types.SimpleNamespace(
+                    id=tool_call.get('id', ''),
+                    type=tool_call.get('type', 'function'),
+                    function=types.SimpleNamespace(
+                        name=function.get('name', ''),
+                        arguments=function.get('arguments', ''),
+                    ),
+                )
+            )
         message = types.SimpleNamespace(
             content=content,
             reasoning_content=reasoning_content,
+            role='assistant',
+            tool_calls=tool_call_objects,
         )
-        self.choices = [types.SimpleNamespace(message=message)]
+        self.choices = [types.SimpleNamespace(message=message, finish_reason=finish_reason)]
         self.usage = usage
 
 
@@ -51,6 +73,8 @@ class FakeCompletionAPI:
                 item['content'],
                 usage=item.get('usage'),
                 reasoning_content=item.get('reasoning_content'),
+                finish_reason=item.get('finish_reason', 'stop'),
+                tool_calls=item.get('tool_calls'),
             )
         return FakeResponse(item)
 
@@ -153,6 +177,7 @@ class AgentContextTests(unittest.TestCase):
             model='fake-model',
             max_steps=kwargs.pop('max_steps', 5),
             screenshot_size=kwargs.pop('screenshot_size', 0),
+            enable_skills=kwargs.pop('enable_skills', False),
             verbose=kwargs.pop('verbose', False),
             **kwargs,
         )
@@ -433,6 +458,100 @@ class AgentContextTests(unittest.TestCase):
             'data:image/png;base64,',
             model_call['messages'][-1]['content'][0]['image_url']['url'],
         )
+
+    def test_skill_tool_loop_loads_skill_and_returns_final_action(self):
+        skill_root = Path(self.temp_dir.name) / '.skills' / 'draw_board'
+        resources_dir = skill_root / 'resources'
+        resources_dir.mkdir(parents=True, exist_ok=True)
+        (resources_dir / 'tips.md').write_text('draw carefully', encoding='utf-8')
+        (skill_root / 'SKILL.md').write_text(
+            """---
+name: draw_board
+description: Help with browser drawing board tasks
+tags:
+  - draw
+  - board
+triggers:
+  - draw_board
+---
+Use the browser drawing board effectively.
+""",
+            encoding='utf-8',
+        )
+
+        self.responses[:] = [
+            {
+                'content': '',
+                'finish_reason': 'tool_calls',
+                'tool_calls': [
+                    {
+                        'id': 'call_1',
+                        'function': {
+                            'name': 'load_skill',
+                            'arguments': '{"skill_name":"draw_board"}',
+                        },
+                    }
+                ],
+            },
+            "Thought: done\nAction: finished(content='ok')",
+        ]
+
+        agent = self._make_agent(
+            enable_skills=True,
+            skill_paths=[str(Path(self.temp_dir.name) / '.skills')],
+            max_steps=1,
+        )
+        result = agent.run('Use draw_board to finish the task')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(len(self.calls), 2)
+        self.assertIn('tools', self.calls[0])
+        self.assertIn('tools', self.calls[1])
+        tool_messages = [
+            message
+            for message in self.calls[1]['messages']
+            if message.get('role') == 'tool'
+        ]
+        self.assertEqual(len(tool_messages), 1)
+        self.assertIn('draw_board', tool_messages[0]['content'])
+        self.assertEqual(result['steps'][0]['used_skills'], ['draw_board'])
+
+    def test_context_log_records_skill_metadata(self):
+        skill_root = Path(self.temp_dir.name) / '.skills' / 'browser_helper'
+        skill_root.mkdir(parents=True, exist_ok=True)
+        (skill_root / 'SKILL.md').write_text(
+            """---
+name: browser_helper
+description: Browser automation helper
+tags: [browser, page]
+triggers: [browser_helper]
+---
+Open and inspect browser pages.
+""",
+            encoding='utf-8',
+        )
+        self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
+
+        agent = self._make_agent(
+            enable_skills=True,
+            skill_paths=[str(Path(self.temp_dir.name) / '.skills')],
+            save_context_log=True,
+            context_log_dir=str(self.log_dir),
+        )
+        result = agent.run('Use browser_helper on this page')
+
+        self.assertTrue(result['success'])
+        log_files = list(self.log_dir.glob('task_*.jsonl'))
+        records = [
+            json.loads(line)
+            for line in log_files[0].read_text(encoding='utf-8').splitlines()
+        ]
+        task_start = next(record for record in records if record['event'] == 'task_start')
+        model_call = next(record for record in records if record['event'] == 'model_call')
+        self.assertEqual(task_start['skills_enabled'], True)
+        self.assertEqual(task_start['candidate_skill_names'], ['browser_helper'])
+        self.assertEqual(model_call['candidate_skill_names'], ['browser_helper'])
+        self.assertEqual(model_call['skills_available'], True)
 
     def test_screenshot_size_resizes_image_before_model_call(self):
         self.responses[:] = [

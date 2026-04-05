@@ -6,7 +6,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class ContextLogger:
@@ -34,6 +34,11 @@ class ContextLogger:
         screenshot_size: Optional[int] = None,
         max_context_screenshots: Optional[int] = None,
         include_execution_feedback: Optional[bool] = None,
+        skills_enabled: Optional[bool] = None,
+        skill_paths: Optional[List[str]] = None,
+        candidate_skill_names: Optional[List[str]] = None,
+        max_candidate_skills: Optional[int] = None,
+        max_skill_tool_rounds: Optional[int] = None,
         log_full_messages: Optional[bool] = None,
     ) -> Optional[str]:
         """开始一个新任务并创建日志文件。"""
@@ -57,6 +62,11 @@ class ContextLogger:
             screenshot_size=screenshot_size,
             max_context_screenshots=max_context_screenshots,
             include_execution_feedback=include_execution_feedback,
+            skills_enabled=skills_enabled,
+            skill_paths=skill_paths,
+            candidate_skill_names=candidate_skill_names,
+            max_candidate_skills=max_candidate_skills,
+            max_skill_tool_rounds=max_skill_tool_rounds,
             log_full_messages=log_full_messages,
         )
 
