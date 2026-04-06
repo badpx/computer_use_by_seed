@@ -209,15 +209,17 @@ class AgentContextTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(system_messages), 1)
-        self.assertIn('Open the calculator', system_messages[0]['content'])
+        self.assertNotIn('Open the calculator', system_messages[0]['content'])
         self.assertEqual(len(image_messages), 2)
-        self.assertEqual(len(user_texts), 1)
-        self.assertIn('Execution Status: success', user_texts[0])
-        self.assertIn('Execution Result: waited', user_texts[0])
-        self.assertIn("Action: wait()", second_messages[2]['content'])
+        self.assertEqual(len(user_texts), 2)
+        self.assertEqual(user_texts[0], 'Open the calculator')
+        self.assertIn('Execution Status: success', user_texts[1])
+        self.assertIn('Execution Result: waited', user_texts[1])
+        self.assertIn("Action: wait()", second_messages[3]['content'])
         self.assertEqual(second_messages[0]['role'], 'system')
         self.assertEqual(second_messages[1]['role'], 'user')
-        self.assertEqual(second_messages[2]['role'], 'assistant')
+        self.assertEqual(second_messages[2]['content'][0]['type'], 'image_url')
+        self.assertEqual(second_messages[3]['role'], 'assistant')
         self.assertEqual(second_messages[-1]['content'][0]['type'], 'image_url')
 
     def test_context_window_keeps_all_assistant_responses_and_latest_five_screenshots(self):
@@ -282,7 +284,7 @@ class AgentContextTests(unittest.TestCase):
             if message['role'] == 'user' and isinstance(message.get('content'), str)
         ]
 
-        self.assertEqual(user_texts, [])
+        self.assertEqual(user_texts, ['Run without execution feedback'])
 
     def test_parse_failure_is_recorded_and_next_round_receives_failure_reason(self):
         self.responses[:] = [
@@ -348,7 +350,8 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(task_start['include_execution_feedback'], True)
         self.assertEqual(
             model_call['message_summary'],
-            '1 system + 0 historical assistant + 0 feedback + 1 screenshots',
+            '1 system + 1 user instructions + 0 persistent skills + '
+            '0 historical assistant + 0 feedback + 1 screenshots',
         )
         self.assertEqual(model_call['retained_screenshot_count'], 1)
         self.assertEqual(model_call['screenshot_size'], [1280, 720])
@@ -479,11 +482,102 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(task_start['log_full_messages'], True)
         self.assertIn('messages', model_call)
         self.assertEqual(model_call['messages'][0]['role'], 'system')
-        self.assertIn('Write a verbose context log', model_call['messages'][0]['content'])
+        self.assertEqual(model_call['messages'][1]['role'], 'user')
+        self.assertEqual(model_call['messages'][1]['content'], 'Write a verbose context log')
         self.assertEqual(model_call['messages'][-1]['content'][0]['type'], 'image_url')
         screenshot_ref = model_call['messages'][-1]['content'][0]['image_url']['url']
         self.assertTrue(screenshot_ref.startswith('screenshots/'), screenshot_ref)
         self.assertTrue((self.log_dir / screenshot_ref).exists())
+
+    def test_persistent_session_keeps_prior_user_and_assistant_messages_across_runs(self):
+        self.responses[:] = [
+            "Thought: first\nAction: finished(content='done-1')",
+            "Thought: second\nAction: finished(content='done-2')",
+        ]
+
+        agent = self._make_agent(persistent_session=True)
+        first_result = agent.run('First task')
+        second_result = agent.run('Second task')
+
+        self.assertTrue(first_result['success'])
+        self.assertTrue(second_result['success'])
+        self.assertEqual(len(self.calls), 2)
+        second_messages = self.calls[1]['messages']
+        user_texts = [
+            message['content']
+            for message in second_messages
+            if message['role'] == 'user' and isinstance(message.get('content'), str)
+        ]
+        assistant_texts = [
+            message['content']
+            for message in second_messages
+            if message['role'] == 'assistant'
+        ]
+
+        self.assertEqual(user_texts, ['First task', 'Second task'])
+        self.assertIn("Thought: first\nAction: finished(content='done-1')", assistant_texts)
+
+    def test_skill_persists_as_user_message_across_runs(self):
+        with tempfile.TemporaryDirectory() as skills_dir:
+            skill_path = Path(skills_dir) / 'open-browser'
+            skill_path.mkdir()
+            (skill_path / 'SKILL.md').write_text(
+                '---\nname: open-browser\ndescription: Open a browser\n---\n\nUse hotkey ctrl+n.',
+                encoding='utf-8',
+            )
+
+            self.responses[:] = [
+                {
+                    'content': '',
+                    'finish_reason': 'tool_calls',
+                    'tool_calls': [FakeToolCall('skill__open-browser', 'tc-42')],
+                },
+                "Thought: first\nAction: finished(content='done-1')",
+                "Thought: second\nAction: finished(content='done-2')",
+            ]
+
+            agent = self._make_agent(
+                skills_dir=skills_dir,
+                enable_skills=True,
+                persistent_session=True,
+            )
+            first_result = agent.run('First task')
+            second_result = agent.run('Second task')
+
+        self.assertTrue(first_result['success'])
+        self.assertTrue(second_result['success'])
+        self.assertEqual(len(self.calls), 3)
+        second_run_messages = self.calls[2]['messages']
+        persisted_skill_messages = [
+            message['content']
+            for message in second_run_messages
+            if message['role'] == 'user'
+            and isinstance(message.get('content'), str)
+            and message['content'].startswith('Loaded Skill Instructions (open-browser)')
+        ]
+        self.assertEqual(len(persisted_skill_messages), 1)
+        self.assertIn('Use hotkey ctrl+n.', persisted_skill_messages[0])
+        self.assertEqual(second_result['runtime_status']['activated_skills'], ['open-browser'])
+
+    def test_clear_session_context_resets_history_and_activated_skills(self):
+        agent = self._make_agent(persistent_session=True)
+        agent.session_history = [
+            {
+                'kind': 'user_instruction',
+                'api_message': {'role': 'user', 'content': 'task'},
+                'logged_message': {'role': 'user', 'content': 'task'},
+            }
+        ]
+        agent.activated_skills = {'open-browser'}
+        agent.last_usage_total_tokens = 123
+        agent.last_context_estimated_bytes = 456
+
+        agent.clear_session_context()
+
+        self.assertEqual(agent.session_history, [])
+        self.assertEqual(agent.activated_skills, set())
+        self.assertIsNone(agent.last_usage_total_tokens)
+        self.assertEqual(agent.last_context_estimated_bytes, 0)
 
     def test_screenshot_size_resizes_image_before_model_call(self):
         self.responses[:] = [

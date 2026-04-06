@@ -37,6 +37,22 @@ description: This skill provides the Agent with the necessary command mappings a
 
 ---
 
+### Universal Editing & Clipboard (Essential)
+These commands are standard across almost all macOS applications (Finder, Safari, Notes, etc.).
+
+| Intent | Shortcut | Notes |
+| :--- | :--- | :--- |
+| **Select All** | `Cmd + A` | Selects all items in a folder or all text in a field. |
+| **Copy** | `Cmd + C` | Copies selected items/text to the clipboard. |
+| **Paste** | `Cmd + V` | Pastes content from the clipboard. |
+| **Cut** | `Cmd + X` | Removes selection and copies to clipboard (Text only). |
+| **Move Files** | `Cmd + Opt + V` | In Finder: Pastes files as "Move" (equivalent to Cut/Paste). |
+| **Undo** | `Cmd + Z` | Reverses the last action. |
+| **Redo** | `Cmd + Shift + Z`| Reverses the Undo command. |
+| **Save** | `Cmd + S` | Saves the current document/file. |
+
+---
+
 ### Text Editing & Advanced Navigation
 macOS supports standard shortcuts and **Emacs-style** bindings globally. These are highly efficient for Agent text manipulation.
 

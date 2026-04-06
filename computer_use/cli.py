@@ -243,6 +243,15 @@ def _handle_status_command(context: InteractiveCommandContext, args_text: str) -
     print()
 
 
+def _handle_clear_command(context: InteractiveCommandContext, args_text: str) -> None:
+    """清理当前交互会话的多轮上下文历史。"""
+    del args_text
+    context.agent.clear_session_context()
+    print()
+    print('[已清理] 多轮对话上下文历史已清空')
+    print()
+
+
 def _handle_exit_command(context: InteractiveCommandContext, args_text: str) -> None:
     """退出交互模式。"""
     del args_text
@@ -253,6 +262,11 @@ def _handle_exit_command(context: InteractiveCommandContext, args_text: str) -> 
 def _build_interactive_commands() -> Dict[str, InteractiveCommand]:
     """返回交互模式支持的本地命令。"""
     return {
+        '/clear': InteractiveCommand(
+            name='/clear',
+            handler=_handle_clear_command,
+            summary='清理多轮对话上下文',
+        ),
         '/exit': InteractiveCommand(
             name='/exit',
             handler=_handle_exit_command,
@@ -468,6 +482,7 @@ def interactive_mode(
             enable_skills=enable_skills,
             verbose=verbose,
             print_init_status=False,
+            persistent_session=True,
             runtime_status_callback=None,
         )
     except Exception as e:
@@ -623,6 +638,7 @@ def single_task_mode(
         enable_skills=enable_skills,
         verbose=verbose,
         print_init_status=True,
+        persistent_session=False,
     )
 
     # 执行任务

@@ -7,8 +7,7 @@ import json
 import io
 import time
 import base64
-from collections import deque
-from typing import Callable, Deque, Dict, Any, List, Optional, Set
+from typing import Callable, Dict, Any, List, Optional, Set
 
 from volcenginesdkarkruntime import Ark
 
@@ -51,6 +50,7 @@ class ComputerUseAgent:
         language: str = 'Chinese',
         verbose: bool = True,
         print_init_status: bool = True,
+        persistent_session: bool = False,
         skills_dir: Optional[str] = None,
         enable_skills: Optional[bool] = None,
         runtime_status_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
@@ -78,6 +78,7 @@ class ComputerUseAgent:
             language: 提示词语言
             verbose: 是否打印详细日志
             print_init_status: 是否在初始化时打印生效参数
+            persistent_session: 是否在多次 run 之间保留会话上下文
         """
         # 配置参数
         self.model = model or config.model
@@ -133,6 +134,7 @@ class ComputerUseAgent:
         self.language = language
         self.verbose = verbose
         self.print_init_status = print_init_status
+        self.persistent_session = persistent_session
         self.enable_skills = enable_skills if enable_skills is not None else config.enable_skills
         self.skills_dir = skills_dir or config.skills_dir
         self.skills: List[Skill] = discover_skills(self.skills_dir) if self.enable_skills else []
@@ -147,12 +149,10 @@ class ComputerUseAgent:
             api_key=self.api_key
         )
         
-        # 执行历史
-        self.history: List[Dict[str, Any]] = []
-        self.assistant_history: List[Dict[str, Any]] = []
-        self.execution_feedback_history: List[Optional[Dict[str, Any]]] = []
-        self.recent_screenshot_messages: Deque[Dict[str, Any]] = deque()
+        # 会话级上下文与运行态
+        self.session_history: List[Dict[str, Any]] = []
         self.activated_skills: Set[str] = set()
+        self.history: List[Dict[str, Any]] = []
         self.last_usage_total_tokens: Optional[int] = None
         self.last_context_estimated_bytes = 0
 
@@ -195,18 +195,10 @@ class ComputerUseAgent:
         }
         task_start_time = time.perf_counter()
 
-        self.history = []
-        self.assistant_history = []
-        self.execution_feedback_history = []
-        self.recent_screenshot_messages = deque()
-        self.activated_skills = set()
-        self.last_usage_total_tokens = None
-        self.last_context_estimated_bytes = 0
-        self.current_step = 0
-        self.context_logger = ContextLogger(
-            enabled=self.save_context_log,
-            log_dir=self.context_log_dir,
-        )
+        if not self.persistent_session:
+            self._reset_session_state()
+        self._reset_run_state()
+        self._append_user_instruction_message(instruction)
 
         self.context_logger.start_task(
             instruction=instruction,
@@ -240,7 +232,7 @@ class ComputerUseAgent:
                 model_screenshot = self._prepare_model_screenshot(screenshot)
                 model_img_width, model_img_height = model_screenshot.size
                 logged_screenshot_path = self._save_debug_screenshot(model_screenshot)
-                current_screenshot_message = self._build_screenshot_message(
+                current_screenshot_item = self._build_screenshot_item(
                     model_screenshot,
                     logged_screenshot_path=logged_screenshot_path,
                 )
@@ -255,8 +247,7 @@ class ComputerUseAgent:
                 text_input = ''
                 messages, logged_messages, message_summary, retained_screenshot_count = (
                     self._build_request_messages(
-                        instruction=instruction,
-                        current_screenshot_message=current_screenshot_message,
+                        current_screenshot_item=current_screenshot_item,
                     )
                 )
                 self.last_context_estimated_bytes = self._estimate_context_bytes(messages)
@@ -329,15 +320,14 @@ class ComputerUseAgent:
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action='')
-                    self._append_context_turn(
-                        screenshot_message=current_screenshot_message,
+                    self._append_step_context(
+                        current_screenshot_item=current_screenshot_item,
                         response=response,
                         step_record=step_record,
                         parsed_action='',
+                        include_feedback=True,
                     )
-                    self.last_context_estimated_bytes = self._estimate_next_context_bytes(
-                        instruction
-                    )
+                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
                     self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
@@ -380,6 +370,15 @@ class ComputerUseAgent:
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
+                    self._append_step_context(
+                        current_screenshot_item=current_screenshot_item,
+                        response=response,
+                        step_record=step_record,
+                        parsed_action=parsed_action,
+                        include_feedback=False,
+                    )
+                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                    self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
                         instruction=instruction,
@@ -438,15 +437,14 @@ class ComputerUseAgent:
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
-                    self._append_context_turn(
-                        screenshot_message=current_screenshot_message,
+                    self._append_step_context(
+                        current_screenshot_item=current_screenshot_item,
                         response=response,
                         step_record=step_record,
                         parsed_action=parsed_action,
+                        include_feedback=True,
                     )
-                    self.last_context_estimated_bytes = self._estimate_next_context_bytes(
-                        instruction
-                    )
+                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
                     self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
@@ -484,6 +482,15 @@ class ComputerUseAgent:
                     )
                     result['steps'].append(step_record)
                     self._record_history_entry(step_record, parsed_action=parsed_action)
+                    self._append_step_context(
+                        current_screenshot_item=current_screenshot_item,
+                        response=response,
+                        step_record=step_record,
+                        parsed_action=parsed_action,
+                        include_feedback=False,
+                    )
+                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                    self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
                         instruction=instruction,
@@ -522,15 +529,14 @@ class ComputerUseAgent:
                 )
                 result['steps'].append(step_record)
                 self._record_history_entry(step_record, parsed_action=parsed_action)
-                self._append_context_turn(
-                    screenshot_message=current_screenshot_message,
+                self._append_step_context(
+                    current_screenshot_item=current_screenshot_item,
                     response=response,
                     step_record=step_record,
                     parsed_action=parsed_action,
+                    include_feedback=True,
                 )
-                self.last_context_estimated_bytes = self._estimate_next_context_bytes(
-                    instruction
-                )
+                self.last_context_estimated_bytes = self._estimate_next_context_bytes()
                 self._notify_runtime_status()
                 self.context_logger.log_event(
                     'step_result',
@@ -582,6 +588,92 @@ class ComputerUseAgent:
         )
         
         return result
+
+    def _reset_session_state(self) -> None:
+        """重置跨 run 的会话上下文。"""
+        self.session_history = []
+        self.activated_skills = set()
+
+    def clear_session_context(self) -> None:
+        """清理当前会话的多轮上下文历史。"""
+        self._reset_session_state()
+        self.last_usage_total_tokens = None
+        self.last_context_estimated_bytes = 0
+        self._notify_runtime_status()
+
+    def _reset_run_state(self) -> None:
+        """重置单次 run 的临时状态。"""
+        self.history = []
+        self.last_usage_total_tokens = None
+        self.last_context_estimated_bytes = 0
+        self.current_step = 0
+        self.context_logger = ContextLogger(
+            enabled=self.save_context_log,
+            log_dir=self.context_log_dir,
+        )
+
+    def _build_history_item(
+        self,
+        kind: str,
+        api_message: Dict[str, Any],
+        logged_message: Optional[Dict[str, Any]] = None,
+        **metadata: Any,
+    ) -> Dict[str, Any]:
+        """构建统一的会话历史项。"""
+        item = {
+            'kind': kind,
+            'api_message': api_message,
+            'logged_message': logged_message or api_message,
+        }
+        item.update(metadata)
+        return item
+
+    def _append_history_item(self, item: Dict[str, Any]) -> None:
+        """向会话历史追加一条消息。"""
+        self.session_history.append(item)
+
+    def _append_user_instruction_message(self, instruction: str) -> None:
+        """将用户指令作为普通 user 消息加入会话历史。"""
+        self._append_history_item(
+            self._build_history_item(
+                kind='user_instruction',
+                api_message={
+                    'role': 'user',
+                    'content': instruction,
+                },
+            )
+        )
+
+    def _build_persistent_skill_message(
+        self,
+        skill_name: str,
+        skill_content: str,
+    ) -> Dict[str, Any]:
+        """将已加载 skill 压缩为可持久保留的普通 user 消息。"""
+        return self._build_history_item(
+            kind='persistent_skill',
+            api_message={
+                'role': 'user',
+                'content': (
+                    f"Loaded Skill Instructions ({skill_name})\n"
+                    f"{skill_content}"
+                ),
+            },
+            skill_name=skill_name,
+        )
+
+    def _append_persistent_skill_message_once(
+        self,
+        skill_name: str,
+        skill_content: str,
+    ) -> None:
+        """仅在首次加载 skill 时向会话历史写入其说明。"""
+        for item in self.session_history:
+            if item.get('kind') == 'persistent_skill' and item.get('skill_name') == skill_name:
+                return
+        self._append_history_item(
+            self._build_persistent_skill_message(skill_name, skill_content)
+        )
 
     def format_effective_status(self) -> str:
         """格式化当前运行的生效参数。"""
@@ -668,8 +760,10 @@ class ComputerUseAgent:
             messages.append(choice.message.model_dump())
             tool_calls = choice.message.tool_calls or []
             for tc in tool_calls:
-                self.activated_skills.add(tc.function.name.removeprefix('skill__'))
+                skill_name = tc.function.name.removeprefix('skill__')
+                self.activated_skills.add(skill_name)
                 skill_content = load_skill(self.skills, tc.function.name)
+                self._append_persistent_skill_message_once(skill_name, skill_content)
                 messages.append({
                     'role': 'tool',
                     'content': skill_content,
@@ -688,10 +782,9 @@ class ComputerUseAgent:
         # 超出 skill 加载轮数上限，返回最后一次响应
         return response, (choice.message.content or '') if choice else ''
 
-    def _build_system_prompt(self, instruction: str) -> str:
-        """构建单次请求共用的 system prompt。若技能系统启用则追加技能说明。"""
+    def _build_system_prompt(self) -> str:
+        """构建稳定的 system prompt。若技能系统启用则追加技能说明。"""
         prompt = COMPUTER_USE_DOUBAO.format(
-            instruction=instruction,
             language=self.language,
         )
         if self.skills:
@@ -813,91 +906,109 @@ class ComputerUseAgent:
             'reasoning': reasoning.strip(),
         }
 
-    def _build_screenshot_message(
+    def _build_screenshot_item(
         self,
         screenshot: Any,
         logged_screenshot_path: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """构建截图消息，分别服务于模型调用和日志落盘。"""
+        """构建截图历史项，分别服务于模型调用和日志落盘。"""
         img_buffer = io.BytesIO()
         screenshot.save(img_buffer, format='PNG')
         img_buffer.seek(0)
         base64_image = base64.b64encode(img_buffer.read()).decode('utf-8')
-        return {
-            'api_message': {
-                'role': 'user',
-                'content': [
-                    {
-                        'type': 'image_url',
-                        'image_url': {
-                            'url': f'data:image/png;base64,{base64_image}'
-                        }
+        api_message = {
+            'role': 'user',
+            'content': [
+                {
+                    'type': 'image_url',
+                    'image_url': {
+                        'url': f'data:image/png;base64,{base64_image}'
                     }
-                ],
-            },
-            'logged_screenshot_path': logged_screenshot_path,
+                }
+            ],
         }
+        return self._build_history_item(
+            kind='screenshot',
+            api_message=api_message,
+            logged_message=self._build_logged_screenshot_message(logged_screenshot_path),
+            logged_screenshot_path=logged_screenshot_path,
+        )
 
     def _build_request_messages(
         self,
-        instruction: str,
-        current_screenshot_message: Dict[str, Any],
+        current_screenshot_item: Dict[str, Any],
     ) -> tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]], str, int]:
         """组装发送给模型的 messages。"""
-        retained_screenshot_items = list(self.recent_screenshot_messages)
-        retained_start = len(self.assistant_history) - len(retained_screenshot_items)
-        retained_feedback_count = 0
+        retained_history_items = self._get_retained_session_history()
+        user_instruction_count = 0
+        persistent_skill_count = 0
+        assistant_count = 0
+        feedback_count = 0
+        historical_screenshot_count = 0
 
-        messages: List[Dict[str, Any]] = [
-            {
-                'role': 'system',
-                'content': self._build_system_prompt(instruction),
-            }
-        ]
+        system_message = {
+            'role': 'system',
+            'content': self._build_system_prompt(),
+        }
+        messages: List[Dict[str, Any]] = [system_message]
         logged_messages: Optional[List[Dict[str, Any]]] = None
         if self.log_full_messages:
-            logged_messages = [dict(messages[0])]
+            logged_messages = [dict(system_message)]
 
-        if retained_start > 0:
-            messages.extend(self.assistant_history[:retained_start])
+        for item in retained_history_items:
+            messages.append(item['api_message'])
             if logged_messages is not None:
-                logged_messages.extend(self.assistant_history[:retained_start])
+                logged_messages.append(item['logged_message'])
 
-        for offset, screenshot_message in enumerate(retained_screenshot_items):
-            turn_index = retained_start + offset
-            messages.append(screenshot_message['api_message'])
-            messages.append(self.assistant_history[turn_index])
-            if logged_messages is not None:
-                logged_messages.append(
-                    self._build_logged_screenshot_message(screenshot_message)
-                )
-                logged_messages.append(self.assistant_history[turn_index])
-            feedback_message = self.execution_feedback_history[turn_index]
-            if self.include_execution_feedback and feedback_message is not None:
-                messages.append(feedback_message)
-                if logged_messages is not None:
-                    logged_messages.append(feedback_message)
-                retained_feedback_count += 1
+            kind = item.get('kind')
+            if kind == 'user_instruction':
+                user_instruction_count += 1
+            elif kind == 'persistent_skill':
+                persistent_skill_count += 1
+            elif kind == 'assistant':
+                assistant_count += 1
+            elif kind == 'execution_feedback':
+                feedback_count += 1
+            elif kind == 'screenshot':
+                historical_screenshot_count += 1
 
-        messages.append(current_screenshot_message['api_message'])
+        messages.append(current_screenshot_item['api_message'])
         if logged_messages is not None:
-            logged_messages.append(
-                self._build_logged_screenshot_message(current_screenshot_message)
-            )
+            logged_messages.append(current_screenshot_item['logged_message'])
 
-        retained_screenshot_count = len(retained_screenshot_items) + 1
+        retained_screenshot_count = historical_screenshot_count + 1
         message_summary = (
-            f'1 system + {len(self.assistant_history)} historical assistant + '
-            f'{retained_feedback_count} feedback + {retained_screenshot_count} screenshots'
+            f'1 system + {user_instruction_count} user instructions + '
+            f'{persistent_skill_count} persistent skills + '
+            f'{assistant_count} historical assistant + '
+            f'{feedback_count} feedback + '
+            f'{retained_screenshot_count} screenshots'
         )
         return messages, logged_messages, message_summary, retained_screenshot_count
 
+    def _get_retained_session_history(self) -> List[Dict[str, Any]]:
+        """返回应用截图窗口裁剪后的会话历史。"""
+        historical_screenshot_limit = max(0, self.max_context_screenshots - 1)
+        screenshot_indexes = [
+            index
+            for index, item in enumerate(self.session_history)
+            if item.get('kind') == 'screenshot'
+        ]
+        kept_screenshot_indexes = set(screenshot_indexes[-historical_screenshot_limit:])
+
+        retained_items = []
+        for index, item in enumerate(self.session_history):
+            if item.get('kind') == 'screenshot' and index not in kept_screenshot_indexes:
+                continue
+            retained_items.append(item)
+        return retained_items
+
     def _build_logged_screenshot_message(
         self,
-        screenshot_message: Dict[str, Any],
+        logged_screenshot_path: Optional[str],
     ) -> Dict[str, Any]:
         """将截图消息转换为日志友好的相对路径引用。"""
-        relative_path = screenshot_message.get('logged_screenshot_path') or ''
+        relative_path = logged_screenshot_path or ''
         return {
             'role': 'user',
             'content': [
@@ -941,10 +1052,11 @@ class ComputerUseAgent:
         screenshot_bytes = screenshot_count * SCREENSHOT_TOKEN_ESTIMATE * TOKEN_ESTIMATE_BYTES
         return serialized_bytes + screenshot_bytes
 
-    def _estimate_next_context_bytes(self, instruction: str) -> int:
+    def _estimate_next_context_bytes(self) -> int:
         """估算下一轮模型调用会携带的上下文字节数。"""
-        placeholder_screenshot_message = {
-            'api_message': {
+        placeholder_screenshot_item = self._build_history_item(
+            kind='screenshot',
+            api_message={
                 'role': 'user',
                 'content': [
                     {
@@ -955,11 +1067,11 @@ class ComputerUseAgent:
                     }
                 ],
             },
-            'logged_screenshot_path': None,
-        }
+            logged_message=self._build_logged_screenshot_message(None),
+            logged_screenshot_path=None,
+        )
         messages, _, _, _ = self._build_request_messages(
-            instruction=instruction,
-            current_screenshot_message=placeholder_screenshot_message,
+            current_screenshot_item=placeholder_screenshot_item,
         )
         return self._estimate_context_bytes(messages)
 
@@ -1060,7 +1172,7 @@ class ComputerUseAgent:
         step_record: Dict[str, Any],
         parsed_action: str
     ) -> Dict[str, Any]:
-        """构建动作执行反馈消息。"""
+        """构建动作执行反馈消息项。"""
         lines = [
             f"Step {step_record['step']} Execution Feedback",
             f"Model Input: {step_record['model_input']}",
@@ -1070,38 +1182,37 @@ class ComputerUseAgent:
             f"Execution Result: {step_record['execution_result'] or '(none)'}",
             f"Failure Reason: {step_record['failure_reason'] or '(none)'}",
         ]
-        return {
-            'role': 'user',
-            'content': '\n'.join(lines),
-        }
+        return self._build_history_item(
+            kind='execution_feedback',
+            api_message={
+                'role': 'user',
+                'content': '\n'.join(lines),
+            },
+        )
 
-    def _append_context_turn(
+    def _append_step_context(
         self,
-        screenshot_message: Dict[str, Any],
+        current_screenshot_item: Dict[str, Any],
         response: str,
         step_record: Dict[str, Any],
         parsed_action: str,
+        include_feedback: bool,
     ) -> None:
         """将本轮上下文写入历史。"""
-        self.assistant_history.append(
-            {
-                'role': 'assistant',
-                'content': response,
-            }
+        self._append_history_item(current_screenshot_item)
+        self._append_history_item(
+            self._build_history_item(
+                kind='assistant',
+                api_message={
+                    'role': 'assistant',
+                    'content': response,
+                },
+            )
         )
 
-        feedback_message: Optional[Dict[str, Any]] = None
-        if self.include_execution_feedback:
+        if self.include_execution_feedback and include_feedback:
             feedback_message = self._build_execution_feedback_message(
                 step_record,
                 parsed_action,
             )
-        self.execution_feedback_history.append(feedback_message)
-
-        historical_screenshot_limit = max(0, self.max_context_screenshots - 1)
-        if historical_screenshot_limit <= 0:
-            return
-
-        while len(self.recent_screenshot_messages) >= historical_screenshot_limit:
-            self.recent_screenshot_messages.popleft()
-        self.recent_screenshot_messages.append(screenshot_message)
+            self._append_history_item(feedback_message)

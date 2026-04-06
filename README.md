@@ -74,7 +74,7 @@ python -m computer_use
 - 左右键编辑当前输入
 - 直接粘贴长文本
 - 历史记录持久化到 `~/.computer_use_history`
-- 输入 slash 命令并自动补齐命令名，例如 `/status`、`/exit`
+- 输入 slash 命令并自动补齐命令名，例如 `/status`、`/clear`、`/exit`
 
 如果运行环境中缺少 `prompt_toolkit`，CLI 会自动回退到基础 `input()` 模式。
 
@@ -146,13 +146,15 @@ CONTEXT_LOG_DIR=./logs
 每一轮调用方舟模型时，代理会发送：
 
 - 单独一份 system 提示词
-- 当前任务内此前所有 assistant 历史响应
+- 会话历史中的用户指令消息
+- 会话历史中的 assistant 历史响应
+- 已展开并持久生效的 skill 指令消息
 - 最近 `N` 张截图对应的图片消息，默认最多 5 张，包含当前轮
 - 可选的历史执行反馈文本
 
 上下文裁剪规则：
 
-- assistant 历史响应默认全部保留
+- 文本消息默认全部保留，包括用户指令、assistant 响应、skill 指令和执行反馈
 - 图片消息只保留最近 `MAX_CONTEXT_SCREENSHOTS` 张，包含当前截图
 - 执行反馈默认关闭，可通过 `INCLUDE_EXECUTION_FEEDBACK` 或 CLI 开启
 
@@ -163,6 +165,9 @@ CONTEXT_LOG_DIR=./logs
 交互模式下：
 
 - 可通过 `/status` 查看本次会话真正生效的参数
+- 可通过 `/clear` 清空当前交互会话的多轮上下文历史
+- 多条用户输入会持续追加到同一会话历史中，而不是按输入重置上下文
+- skill 一旦在当前交互会话中展开，会转成普通用户消息持久保留并持续生效
 - 传 `--verbose` 时，额外打印 `[配置信息]`，用于展示基础环境和调试相关配置
 
 ## CLI 参数

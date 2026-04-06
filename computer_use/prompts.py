@@ -5,7 +5,8 @@
 
 # 电脑 GUI 任务场景的提示词模板
 COMPUTER_USE_DOUBAO = '''You are a GUI agent. You will receive a conversation history that contains:
-- the system-level task instruction
+- user instructions for the current ongoing conversation
+- optionally persisted skill instructions that were loaded earlier in the conversation
 - assistant Thought/Action responses from previous turns
 - optional user execution feedback for previous actions
 - up to several recent screenshots, where the latest image is always the current screenshot
@@ -33,9 +34,6 @@ finished(content='xxx') # Use escape characters \\', \\", and \\n in content par
 - Use the prior user execution feedback to avoid repeating failed actions.
 - The latest image attached in the conversation is the current screenshot. Earlier image messages, if present, are older screenshots for reference only.
 - If a previous step failed, adjust your next action using the recorded failure reason.
-
-## User Instruction
-{instruction}
 '''
 
 # 技能提示词附加内容，在技能系统启用时追加到系统提示词末尾
