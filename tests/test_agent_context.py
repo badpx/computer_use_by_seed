@@ -527,6 +527,16 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(agent._get_compaction_max_tokens(9, 30), 100)
         self.assertEqual(agent._get_compaction_max_tokens(0, 50), 50)
 
+    def test_runtime_status_shows_auto_compact_warning_after_eighty_five_percent(self):
+        agent = self._make_agent(persistent_session=True)
+        agent.last_context_estimated_bytes = int(
+            self.agent_module.CONTEXT_WINDOW_BYTES * 0.86
+        )
+
+        runtime_status = agent._build_runtime_status(elapsed_seconds=0.0)
+
+        self.assertEqual(runtime_status['status_note'], 'Auto compact soon')
+
     def test_compact_session_context_rebuilds_pairs_and_moves_skills_first(self):
         self.responses[:] = [
             json.dumps(
@@ -604,6 +614,39 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(agent.session_history[3]['api_message']['content'], 'Compressed second user')
         self.assertEqual(agent.session_history[4]['api_message']['content'], 'Compressed second assistant')
         self.assertIsNone(agent.last_usage_total_tokens)
+
+    def test_auto_compaction_emits_compacting_status_note_during_callback(self):
+        self.responses[:] = [
+            json.dumps(
+                {
+                    'condensed_user_instruction': 'Compressed user',
+                    'condensed_assistant_response': 'Compressed assistant',
+                },
+                ensure_ascii=False,
+            ),
+        ]
+
+        agent = self._make_agent(persistent_session=True)
+        agent.session_history = [
+            agent._build_history_item(
+                kind='user_instruction',
+                api_message={'role': 'user', 'content': 'Older task'},
+            ),
+            agent._build_history_item(
+                kind='assistant',
+                api_message={'role': 'assistant', 'content': 'Thought: older\nAction: wait()'},
+            ),
+        ]
+        status_notes = []
+        agent.runtime_status_callback = lambda runtime_status: status_notes.append(
+            runtime_status.get('status_note')
+        )
+
+        changed = agent._compact_session_context(trigger_reason='auto')
+
+        self.assertTrue(changed)
+        self.assertIn('Auto compacting...', status_notes)
+        self.assertEqual(status_notes[-1], '')
 
     def test_auto_compaction_runs_before_main_model_call_and_keeps_current_user_instruction(self):
         original_threshold = self.agent_module.CONTEXT_COMPACTION_THRESHOLD_BYTES

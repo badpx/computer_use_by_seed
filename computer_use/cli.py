@@ -34,17 +34,21 @@ class InteractiveStatusBar:
         self.total_skills = total_skills
         self.active_skills = 0
         self.context_percent = 0
+        self.status_note = ''
         self.completed_elapsed_seconds = 0.0
         self.current_task_started_at: Optional[float] = None
 
     def render(self) -> str:
         """渲染底部状态栏文本。"""
-        return (
+        parts = [
             f"{self.model} {self.reasoning_effort} | "
             f"Context: {self.context_percent}% | "
             f"Skills: {self.active_skills}/{self.total_skills} | "
             f"Duration: {self._format_elapsed_time(self._current_total_elapsed_seconds())}"
-        )
+        ]
+        if self.status_note:
+            parts.append(f" | {self.status_note}")
+        return ''.join(parts)
 
     def update_live_status(self, runtime_status: Dict[str, Any]) -> None:
         """根据运行时状态更新状态栏。"""
@@ -62,12 +66,14 @@ class InteractiveStatusBar:
 
         self.context_percent = self._to_percent(used_bytes)
         self.active_skills = len(runtime_status.get('activated_skills') or [])
+        self.status_note = str(runtime_status.get('status_note') or '')
 
     def start_task(self) -> None:
         """标记当前任务开始。"""
         self.current_task_started_at = time.perf_counter()
         self.context_percent = 0
         self.active_skills = 0
+        self.status_note = ''
 
     def finish_task(self, result: Dict[str, Any]) -> None:
         """根据任务结果收尾状态栏。"""

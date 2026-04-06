@@ -249,6 +249,27 @@ class CliPromptTests(unittest.TestCase):
         self.assertIn('Skills: 1/3', second_toolbar)
         self.assertIn('Duration: 00:00:12', second_toolbar)
 
+    def test_status_bar_renders_runtime_status_note_at_the_end(self):
+        status_bar = self.cli.InteractiveStatusBar(
+            model='fake-model',
+            thinking_mode='enabled',
+            reasoning_effort='high',
+            total_skills=3,
+        )
+
+        status_bar.update_live_status(
+            {
+                'context_estimated_bytes': int(self.cli.CONTEXT_WINDOW_BYTES * 0.86),
+                'activated_skills': ['open-browser'],
+                'status_note': 'Auto compact soon',
+            }
+        )
+
+        rendered = status_bar.render()
+        self.assertIn('Context: 86%', rendered)
+        self.assertIn('Skills: 1/3', rendered)
+        self.assertTrue(rendered.endswith(' | Auto compact soon'))
+
     def test_interactive_mode_exits_on_ctrl_d_with_prompt_toolkit(self):
         fake_agent_instances = []
 

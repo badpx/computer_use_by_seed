@@ -22,6 +22,7 @@ from .skills import Skill, discover_skills, skills_to_tools, load_skill
 TOKEN_ESTIMATE_BYTES = 4
 SCREENSHOT_TOKEN_ESTIMATE = 2000
 CONTEXT_WINDOW_BYTES = 256 * 1024
+CONTEXT_COMPACTION_WARNING_BYTES = int(CONTEXT_WINDOW_BYTES * 0.85)
 CONTEXT_COMPACTION_THRESHOLD_BYTES = int(CONTEXT_WINDOW_BYTES * 0.9)
 COMPACTION_MAX_TOKENS_BASE = 400
 COMPACTION_MAX_TOKENS_MIN = 50
@@ -178,6 +179,8 @@ class ComputerUseAgent:
         self.history: List[Dict[str, Any]] = []
         self.last_usage_total_tokens: Optional[int] = None
         self.last_context_estimated_bytes = 0
+        self._runtime_status_note = ''
+        self._suppress_auto_compact_warning = False
 
         # 上下文日志
         self.context_logger = ContextLogger(
@@ -277,7 +280,9 @@ class ComputerUseAgent:
                         current_screenshot_item=current_screenshot_item,
                     )
                 )
-                self.last_context_estimated_bytes = self._estimate_context_bytes(messages)
+                self._set_context_estimated_bytes(
+                    self._estimate_context_bytes(messages)
+                )
                 self._notify_runtime_status()
 
                 model_call_payload = {
@@ -354,7 +359,9 @@ class ComputerUseAgent:
                         parsed_action='',
                         include_feedback=True,
                     )
-                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                    self._set_context_estimated_bytes(
+                        self._estimate_next_context_bytes()
+                    )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
@@ -404,7 +411,9 @@ class ComputerUseAgent:
                         parsed_action=parsed_action,
                         include_feedback=False,
                     )
-                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                    self._set_context_estimated_bytes(
+                        self._estimate_next_context_bytes()
+                    )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
@@ -471,7 +480,9 @@ class ComputerUseAgent:
                         parsed_action=parsed_action,
                         include_feedback=True,
                     )
-                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                    self._set_context_estimated_bytes(
+                        self._estimate_next_context_bytes()
+                    )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
@@ -516,7 +527,9 @@ class ComputerUseAgent:
                         parsed_action=parsed_action,
                         include_feedback=False,
                     )
-                    self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                    self._set_context_estimated_bytes(
+                        self._estimate_next_context_bytes()
+                    )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
                         'step_result',
@@ -563,7 +576,9 @@ class ComputerUseAgent:
                     parsed_action=parsed_action,
                     include_feedback=True,
                 )
-                self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                self._set_context_estimated_bytes(
+                    self._estimate_next_context_bytes()
+                )
                 self._notify_runtime_status()
                 self.context_logger.log_event(
                     'step_result',
@@ -625,7 +640,7 @@ class ComputerUseAgent:
         """清理当前会话的多轮上下文历史。"""
         self._reset_session_state()
         self.last_usage_total_tokens = None
-        self.last_context_estimated_bytes = 0
+        self._set_context_estimated_bytes(0)
         self._notify_runtime_status()
 
     def compact_session_context(self, manual: bool = False) -> bool:
@@ -640,8 +655,9 @@ class ComputerUseAgent:
         """重置单次 run 的临时状态。"""
         self.history = []
         self.last_usage_total_tokens = None
-        self.last_context_estimated_bytes = 0
+        self._set_context_estimated_bytes(0)
         self.current_step = 0
+        self._runtime_status_note = ''
         self.context_logger = ContextLogger(
             enabled=self.save_context_log,
             log_dir=self.context_log_dir,
@@ -898,7 +914,10 @@ class ComputerUseAgent:
             changed = rebuilt_history != self.session_history
             if changed:
                 self.session_history = rebuilt_history
-                self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+                self._set_context_estimated_bytes(
+                    self._estimate_next_context_bytes(),
+                    suppress_warning=(trigger_reason == 'auto'),
+                )
                 self._notify_runtime_status()
             return changed
 
@@ -906,6 +925,9 @@ class ComputerUseAgent:
         before_counts = self._count_history_kinds(before_items)
         compacted_turns: List[Dict[str, str]] = []
 
+        if trigger_reason == 'auto':
+            self._runtime_status_note = 'Auto compacting...'
+            self._notify_runtime_status()
         self._is_compacting = True
         try:
             for turn_index, turn in enumerate(turns):
@@ -918,6 +940,8 @@ class ComputerUseAgent:
             return False
         finally:
             self._is_compacting = False
+            if trigger_reason == 'auto':
+                self._runtime_status_note = ''
 
         rebuilt_history: List[Dict[str, Any]] = list(skill_items)
         for summary in compacted_turns:
@@ -944,7 +968,10 @@ class ComputerUseAgent:
         changed = rebuilt_history != before_items
         self.session_history = rebuilt_history
         self.last_usage_total_tokens = None
-        self.last_context_estimated_bytes = self._estimate_next_context_bytes()
+        self._set_context_estimated_bytes(
+            self._estimate_next_context_bytes(),
+            suppress_warning=(trigger_reason == 'auto'),
+        )
         self._notify_runtime_status()
 
         after_counts = self._count_history_kinds(rebuilt_history)
@@ -1390,7 +1417,20 @@ class ComputerUseAgent:
             'context_estimated_bytes': self.last_context_estimated_bytes,
             'activated_skills': sorted(self.activated_skills),
             'elapsed_seconds': elapsed_seconds,
+            'status_note': self._get_runtime_status_note(),
         }
+
+    def _get_runtime_status_note(self) -> str:
+        """返回当前应显示在状态栏中的运行时备注。"""
+        if self._runtime_status_note:
+            return self._runtime_status_note
+        if (
+            self.persistent_session
+            and not self._suppress_auto_compact_warning
+            and self.last_context_estimated_bytes > CONTEXT_COMPACTION_WARNING_BYTES
+        ):
+            return 'Auto compact soon'
+        return ''
 
     def _notify_runtime_status(self, elapsed_seconds: float = 0.0) -> None:
         """向外部回调最新的运行时状态。"""
@@ -1524,3 +1564,19 @@ class ComputerUseAgent:
                 parsed_action,
             )
             self._append_history_item(feedback_message)
+    def _set_context_estimated_bytes(
+        self,
+        estimated_bytes: int,
+        suppress_warning: bool = False,
+    ) -> None:
+        """更新上下文估算值，并维护自动压缩提示抑制状态。"""
+        previous_bytes = self.last_context_estimated_bytes
+        self.last_context_estimated_bytes = estimated_bytes
+        if suppress_warning:
+            self._suppress_auto_compact_warning = True
+            return
+        if (
+            estimated_bytes <= CONTEXT_COMPACTION_WARNING_BYTES
+            or estimated_bytes > previous_bytes
+        ):
+            self._suppress_auto_compact_warning = False
