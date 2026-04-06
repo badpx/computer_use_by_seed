@@ -117,6 +117,36 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         self.assertEqual(self.fake_pyautogui.hotkey_calls, [('command', 'v')])
         self.assertEqual(result, '输入文本(剪贴板): 计算器')
 
+    def test_type_uses_clipboard_for_single_unicode_character_on_all_platforms(self):
+        for platform_name, expected_hotkey in (
+            ('darwin', ('command', 'v')),
+            ('linux', ('ctrl', 'v')),
+            ('win32', ('ctrl', 'v')),
+        ):
+            with self.subTest(platform=platform_name):
+                self.action_executor.sys.platform = platform_name
+                self.fake_pyperclip.copied_text = None
+                self.fake_pyautogui.hotkey_calls.clear()
+                self.fake_pyautogui.write_calls.clear()
+
+                executor = self.action_executor.ActionExecutor(
+                    image_width=100,
+                    image_height=100,
+                    verbose=False,
+                )
+
+                result = executor.execute(
+                    {
+                        'action_type': 'type',
+                        'action_inputs': {'content': '酒'},
+                    }
+                )
+
+                self.assertEqual(self.fake_pyperclip.copied_text, '酒')
+                self.assertEqual(self.fake_pyautogui.hotkey_calls, [expected_hotkey])
+                self.assertEqual(self.fake_pyautogui.write_calls, [])
+                self.assertEqual(result, '输入文本(剪贴板): 酒')
+
     def test_scroll_moves_pointer_to_target_and_uses_visible_amount(self):
         executor = self.action_executor.ActionExecutor(
             image_width=1000,

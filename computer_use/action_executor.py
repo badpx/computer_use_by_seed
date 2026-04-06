@@ -316,7 +316,7 @@ class ActionExecutor:
             content = content[:-1]
         
         # 根据输入方式选择输入方法
-        if self.input_swap and len(content) > 1:
+        if self._should_use_clipboard_input(content):
             # 使用剪贴板输入长文本
             try:
                 import pyperclip
@@ -341,6 +341,16 @@ class ActionExecutor:
         if self.verbose:
             print(f"  [完成] {result}")
         return result
+
+    def _should_use_clipboard_input(self, content: str) -> bool:
+        """判断当前文本是否应优先通过剪贴板输入。"""
+        if not self.input_swap:
+            return False
+
+        if len(content) > 1:
+            return True
+
+        return any(ord(char) > 127 for char in content)
     
     def _execute_scroll(self, action_inputs: Dict[str, Any]) -> str:
         """执行滚动操作"""
