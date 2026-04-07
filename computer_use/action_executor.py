@@ -3,6 +3,7 @@
 基于 parse.py 重构，支持所有动作类型的执行
 """
 
+import ast
 import re
 import sys
 import time
@@ -154,8 +155,8 @@ class ActionExecutor:
             Tuple[int, int]: 坐标
         """
         if isinstance(box, str):
-            box = eval(box)
-        
+            box = self._parse_coordinate_string(box)
+
         if isinstance(box, (list, tuple)):
             if len(box) == 2:
                 x, y = box
@@ -168,6 +169,30 @@ class ActionExecutor:
                 return self._convert_coordinates(x, y)
         
         raise ValueError(f"无法解析坐标: {box}")
+
+    def _parse_coordinate_string(
+        self,
+        coordinate_text: str,
+    ) -> Union[List[float], Tuple[float, float]]:
+        """兼容模型返回的多种坐标字符串格式。"""
+        stripped = coordinate_text.strip()
+
+        pair_match = re.fullmatch(
+            r'[\[(]?\s*(-?(?:\d+(?:\.\d+)?|\.\d+))[\s,]+(-?(?:\d+(?:\.\d+)?|\.\d+))\s*[\])]?',
+            stripped,
+        )
+        if pair_match:
+            return [float(pair_match.group(1)), float(pair_match.group(2))]
+
+        try:
+            parsed = ast.literal_eval(stripped)
+        except (SyntaxError, ValueError):
+            raise ValueError(f"无法解析坐标: {coordinate_text}")
+
+        if isinstance(parsed, (list, tuple)):
+            return parsed
+
+        raise ValueError(f"无法解析坐标: {coordinate_text}")
     
     def _execute_click(
         self,

@@ -361,6 +361,29 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         )
         self.assertEqual(result, '单击 (25, 50)')
 
+    def test_click_accepts_space_separated_point_string(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=200,
+            image_height=100,
+            coordinate_space='pixel',
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'click',
+                'action_inputs': {
+                    'point': '1000 0',
+                },
+            }
+        )
+
+        self.assertEqual(
+            self.fake_pyautogui.click_calls,
+            [((1000, 0), {'button': 'left', 'clicks': 1})],
+        )
+        self.assertEqual(result, '单击 (1000, 0)')
+
     def test_wait_uses_explicit_seconds(self):
         executor = self.action_executor.ActionExecutor(
             image_width=200,

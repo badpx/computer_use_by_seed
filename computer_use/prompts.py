@@ -29,6 +29,7 @@ wait(seconds=5) # Sleep for the specified seconds and take a screenshot to check
 finished(content='xxx') # Use escape characters \\', \\", and \\n in content part to ensure we can parse the content in normal python string format.
 
 ## Note
+- Normalize the x and y coordinates of each point and scale them into the interval [0, 1000].
 - Use {language} in `Thought` part.
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.
 - Use the prior user execution feedback to avoid repeating failed actions.

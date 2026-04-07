@@ -38,6 +38,21 @@ class ActionParserCoordinateTests(unittest.TestCase):
         self.assertEqual(parsed['action_inputs']['x'], 0.25)
         self.assertEqual(parsed['action_inputs']['y'], 0.75)
 
+    def test_parse_click_point_without_xml_tags(self):
+        parsed = parse_action("Action: click(point='1000 0')")
+
+        self.assertEqual(parsed['action_type'], 'click')
+        self.assertEqual(parsed['action_inputs']['point'], [1000.0, 0.0])
+
+    def test_parse_drag_points_without_xml_tags(self):
+        parsed = parse_action(
+            "Action: drag(start_point='236 470', end_point='544 470')"
+        )
+
+        self.assertEqual(parsed['action_type'], 'drag')
+        self.assertEqual(parsed['action_inputs']['start_point'], [236.0, 470.0])
+        self.assertEqual(parsed['action_inputs']['end_point'], [544.0, 470.0])
+
     def test_extract_finished_action_from_natural_language_response(self):
         parsed = parse_action(
             "太好了！现在，多余的中间横线已经擦掉了，完全符合要求，任务完成！"

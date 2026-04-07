@@ -205,21 +205,15 @@ class ActionParser:
                    (value.startswith("'") and value.endswith("'")):
                     value = value[1:-1]
 
-                # start_point/end_point 允许使用 <point> 或同名标签
-                if key in {'start_point', 'end_point'}:
+                # 处理 point / start_point / end_point 坐标文本
+                if key in {'point', 'start_point', 'end_point'}:
+                    allowed_tags = ('point', key) if key != 'point' else ('point',)
                     point_value = self._extract_point_value(
                         value,
-                        allowed_tags=('point', key),
+                        allowed_tags=allowed_tags,
                     )
                     if point_value is not None:
                         params[key] = point_value
-                        continue
-
-                # 处理通用 point 标记
-                if key == 'point':
-                    point_value = self._extract_point_value(value)
-                    if point_value is not None:
-                        params['point'] = point_value
                         continue
 
                 if key in NUMERIC_PARAM_KEYS:
@@ -238,6 +232,10 @@ class ActionParser:
         allowed_tags: Tuple[str, ...] = ('point',),
     ) -> Optional[list]:
         """从标签文本中提取坐标值。"""
+        raw_point = self._extract_plain_point_value(value)
+        if raw_point is not None:
+            return raw_point
+
         for tag in allowed_tags:
             point_match = re.search(
                 rf'<{tag}>({NUMBER_PATTERN})\s+({NUMBER_PATTERN})</{tag}>',
@@ -248,6 +246,22 @@ class ActionParser:
                     float(point_match.group(1)),
                     float(point_match.group(2)),
                 ]
+        return None
+
+    def _extract_plain_point_value(self, value: str) -> Optional[list]:
+        """从非 XML 标签的坐标文本中提取坐标值。"""
+        stripped = value.strip()
+
+        plain_match = re.fullmatch(
+            rf'[\[(]?({NUMBER_PATTERN})[\s,]+({NUMBER_PATTERN})[\])]?',
+            stripped,
+        )
+        if plain_match:
+            return [
+                float(plain_match.group(1)),
+                float(plain_match.group(2)),
+            ]
+
         return None
     
     def _split_params(self, params_str: str) -> list:
