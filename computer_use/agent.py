@@ -897,7 +897,7 @@ class ComputerUseAgent:
             reasoning_effort=self.reasoning_effort,
             max_tokens=max_tokens,
         )
-        response_text = response.choices[0].message.content or ''
+        response_text = self._extract_response_text(response)
         return self._parse_compaction_response(response_text)
 
     def _compact_session_context(
@@ -1090,7 +1090,7 @@ class ComputerUseAgent:
 
             if getattr(choice, 'finish_reason', None) != 'tool_calls':
                 # 正常文本响应，直接返回
-                return response, choice.message.content
+                return response, self._extract_response_text(response)
 
             # 模型请求加载 Skill：注入内容后重新调用
             # TODO: Level 3 — 区分 skill__ 前缀（加载指南）与 resource__/script__ 前缀
@@ -1118,7 +1118,26 @@ class ComputerUseAgent:
             self._notify_runtime_status()
 
         # 超出 skill 加载轮数上限，返回最后一次响应
-        return response, (choice.message.content or '') if choice else ''
+        return response, self._extract_response_text(response) if response else ''
+
+    def _extract_response_text(self, response_obj: Any) -> str:
+        """提取模型可解析文本，优先 content，缺失时回退 reasoning_content。"""
+        message = None
+        choices = getattr(response_obj, 'choices', None) or []
+        if choices:
+            message = getattr(choices[0], 'message', None)
+        if message is None:
+            return ''
+
+        content = getattr(message, 'content', None)
+        if isinstance(content, str) and content.strip():
+            return content
+
+        reasoning_content = getattr(message, 'reasoning_content', None)
+        if isinstance(reasoning_content, str):
+            return reasoning_content
+
+        return ''
 
     def _build_system_prompt(self) -> str:
         """构建稳定的 system prompt。若技能系统启用则追加技能说明。"""

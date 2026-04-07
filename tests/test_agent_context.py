@@ -371,6 +371,66 @@ class AgentContextTests(unittest.TestCase):
         )
         self.assertEqual(model_response['reasoning'], 'deep reasoning trace')
 
+    def test_run_uses_reasoning_content_when_content_is_empty(self):
+        self.responses[:] = [
+            {
+                'content': '',
+                'reasoning_content': "Thought: done\nAction: finished(content='ok')",
+            }
+        ]
+
+        agent = self._make_agent()
+        result = agent.run('Finish via reasoning fallback')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['final_response'], 'ok')
+
+    def test_run_prefers_content_over_reasoning_content(self):
+        self.responses[:] = [
+            {
+                'content': "Thought: done\nAction: finished(content='from-content')",
+                'reasoning_content': "Thought: done\nAction: finished(content='from-reasoning')",
+            }
+        ]
+
+        agent = self._make_agent()
+        result = agent.run('Prefer content over reasoning')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['final_response'], 'from-content')
+
+    def test_compaction_uses_reasoning_content_when_content_is_empty(self):
+        self.responses[:] = [
+            {
+                'content': '',
+                'reasoning_content': json.dumps(
+                    {
+                        'condensed_user_instruction': 'Compressed first user',
+                        'condensed_assistant_response': 'Compressed first assistant',
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
+
+        agent = self._make_agent(persistent_session=True)
+        summary = agent._summarize_turn_for_compaction(
+            {
+                'user_messages': ['First task'],
+                'assistant_messages': ['Thought: first\nAction: wait()'],
+                'feedback_messages': [],
+            },
+            max_tokens=200,
+        )
+
+        self.assertEqual(
+            summary,
+            {
+                'condensed_user_instruction': 'Compressed first user',
+                'condensed_assistant_response': 'Compressed first assistant',
+            },
+        )
+
     def test_parse_failure_prints_basic_error_detail(self):
         self.responses[:] = ['this is not a valid action']
 
@@ -390,7 +450,12 @@ class AgentContextTests(unittest.TestCase):
         output = io.StringIO()
 
         with redirect_stdout(output):
-            self._make_agent(verbose=True, print_init_status=True)
+            self._make_agent(
+                verbose=True,
+                print_init_status=True,
+                thinking_mode='disabled',
+                reasoning_effort='minimal',
+            )
 
         printed = output.getvalue()
         self.assertIn('[生效参数]', printed)
