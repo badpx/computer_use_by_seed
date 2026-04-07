@@ -15,7 +15,7 @@ from typing import Callable, Dict, Any, List, Optional, Set, Tuple
 from volcenginesdkarkruntime import Ark
 
 from .config import config, normalize_coordinate_space, resolve_thinking_settings
-from .screenshot import capture_screenshot
+from .screenshot import capture_screenshot, resolve_display
 from .action_parser import parse_action
 from .action_executor import ActionExecutor
 from .logging_utils import ContextLogger
@@ -72,6 +72,7 @@ class ComputerUseAgent:
         log_full_messages: bool = False,
         max_steps: Optional[int] = None,
         natural_scroll: Optional[bool] = None,
+        display_index: Optional[int] = None,
         save_context_log: Optional[bool] = None,
         context_log_dir: Optional[str] = None,
         language: str = 'Chinese',
@@ -100,6 +101,7 @@ class ComputerUseAgent:
             log_full_messages: 是否在上下文日志中记录完整 messages
             max_steps: 最大执行步数，默认从配置读取
             natural_scroll: 是否使用自然滚动
+            display_index: 目标显示器编号
             save_context_log: 是否保存上下文日志
             context_log_dir: 上下文日志目录
             language: 提示词语言
@@ -153,6 +155,11 @@ class ComputerUseAgent:
         self.natural_scroll = (
             natural_scroll if natural_scroll is not None else config.natural_scroll
         )
+        self.display_index = (
+            config.display_index if display_index is None else int(display_index)
+        )
+        if self.display_index < 0:
+            raise ValueError('display_index 不能小于 0')
         self.save_context_log = (
             save_context_log if save_context_log is not None else config.save_context_log
         )
@@ -191,6 +198,7 @@ class ComputerUseAgent:
             log_dir=self.context_log_dir,
         )
         self._is_compacting = False
+        self.current_display_info = self._resolve_display_info(self.display_index)
 
         # 当前步骤
         self.current_step = 0
@@ -229,6 +237,7 @@ class ComputerUseAgent:
             self._reset_session_state()
         self._reset_run_state()
         self._append_user_instruction_message(instruction)
+        self.current_display_info = self._resolve_display_info(self.display_index)
 
         self.context_logger.start_task(
             instruction=instruction,
@@ -243,6 +252,9 @@ class ComputerUseAgent:
             max_context_screenshots=self.max_context_screenshots,
             include_execution_feedback=self.include_execution_feedback,
             log_full_messages=self.log_full_messages,
+            display_index=self.current_display_info['index'],
+            display_bounds=self._display_bounds_list(self.current_display_info),
+            display_is_primary=self.current_display_info['is_primary'],
         )
         result['context_log_path'] = self.context_logger.current_log_path
         self._notify_runtime_status()
@@ -257,7 +269,8 @@ class ComputerUseAgent:
                     print(f"\n[步骤 {self.current_step}/{self.max_steps}]")
                 
                 # 1. 截图
-                screenshot, _ = capture_screenshot()
+                self.current_display_info = self._resolve_display_info(self.display_index)
+                screenshot, _ = capture_screenshot(display_index=self.display_index)
                 img_width, img_height = screenshot.size
                 model_screenshot = self._prepare_model_screenshot(screenshot)
                 model_img_width, model_img_height = model_screenshot.size
@@ -305,6 +318,9 @@ class ComputerUseAgent:
                     'screenshot_path': logged_screenshot_path,
                     'screenshot_size': [model_img_width, model_img_height],
                     'original_screenshot_size': [img_width, img_height],
+                    'display_index': self.current_display_info['index'],
+                    'display_bounds': self._display_bounds_list(self.current_display_info),
+                    'display_is_primary': self.current_display_info['is_primary'],
                 }
                 if logged_messages is not None:
                     model_call_payload['messages'] = logged_messages
@@ -455,6 +471,8 @@ class ComputerUseAgent:
                     coordinate_scale=self.coordinate_scale,
                     verbose=self.verbose,
                     natural_scroll=self.natural_scroll,
+                    display_offset_x=self.current_display_info['x'],
+                    display_offset_y=self.current_display_info['y'],
                 )
                 
                 try:
@@ -1013,15 +1031,74 @@ class ComputerUseAgent:
             preserve_latest_pending_user=True,
         )
 
+    def _normalize_display_info(self, display_info: Any) -> Dict[str, Any]:
+        """将显示器信息标准化为日志和执行器可用的字典。"""
+        if hasattr(display_info, 'to_dict'):
+            payload = display_info.to_dict()
+        elif isinstance(display_info, dict):
+            payload = dict(display_info)
+        else:
+            raise ValueError(f'无法解析显示器信息: {display_info}')
+
+        payload['index'] = int(payload.get('index', 0))
+        payload['x'] = int(payload.get('x', 0))
+        payload['y'] = int(payload.get('y', 0))
+        payload['width'] = int(payload.get('width', 0))
+        payload['height'] = int(payload.get('height', 0))
+        payload['is_primary'] = bool(payload.get('is_primary', payload['index'] == 0))
+        payload['bounds'] = self._display_bounds_list(payload)
+        return payload
+
+    def _resolve_display_info(self, display_index: Optional[int] = None) -> Dict[str, Any]:
+        """解析当前目标显示器信息。"""
+        return self._normalize_display_info(resolve_display(display_index))
+
+    def _display_bounds_list(self, display_info: Dict[str, Any]) -> List[int]:
+        """返回 [x, y, width, height] 形式的显示器区域。"""
+        return [
+            int(display_info.get('x', 0)),
+            int(display_info.get('y', 0)),
+            int(display_info.get('width', 0)),
+            int(display_info.get('height', 0)),
+        ]
+
+    def set_display_index(self, display_index: int) -> Dict[str, Any]:
+        """切换当前运行态目标显示器。"""
+        target_index = int(display_index)
+        if target_index < 0:
+            raise ValueError('display_index 不能小于 0')
+        display_info = self._resolve_display_info(target_index)
+        self.display_index = target_index
+        self.current_display_info = display_info
+        return display_info
+
+    def persist_display_index(self) -> str:
+        """将当前目标显示器持久化到项目配置。"""
+        return config.persist_display_index(self.display_index)
+
     def format_effective_status(self) -> str:
         """格式化当前运行的生效参数。"""
+        try:
+            display_info = self.current_display_info or self._resolve_display_info(
+                self.display_index
+            )
+        except Exception:
+            display_info = None
+
         lines = [
             '[生效参数]',
             f"  模型: {self.model}",
             f"  最大步数: {self.max_steps}",
             f"  思考: {self.thinking_mode} / {self.reasoning_effort}",
             f"  坐标空间: {self.coordinate_space}",
+            f"  目标显示器: {self.display_index}",
         ]
+        if display_info is not None:
+            lines.append(
+                '  显示器区域: '
+                f"{display_info['width']}x{display_info['height']} @ "
+                f"({display_info['x']}, {display_info['y']})"
+            )
         if self.coordinate_space == 'relative':
             lines.append(f"  坐标量程: {self.coordinate_scale}")
         if self.screenshot_size is not None:

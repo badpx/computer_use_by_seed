@@ -29,7 +29,9 @@ class ActionExecutor:
         coordinate_scale: float = 1000,
         verbose: bool = True,
         input_swap: bool = True,
-        natural_scroll: Optional[bool] = None
+        natural_scroll: Optional[bool] = None,
+        display_offset_x: int = 0,
+        display_offset_y: int = 0,
     ):
         """
         初始化执行器
@@ -44,6 +46,8 @@ class ActionExecutor:
             verbose: 是否打印详细日志
             input_swap: 是否使用剪贴板输入长文本
             natural_scroll: 是否使用自然滚动方向
+            display_offset_x: 目标显示器在虚拟桌面的 X 偏移
+            display_offset_y: 目标显示器在虚拟桌面的 Y 偏移
         """
         self.image_width = image_width
         self.image_height = image_height
@@ -58,6 +62,8 @@ class ActionExecutor:
         self.natural_scroll = (
             config.natural_scroll if natural_scroll is None else natural_scroll
         )
+        self.display_offset_x = int(display_offset_x)
+        self.display_offset_y = int(display_offset_y)
         
         # 配置 pyautogui
         pyautogui.FAILSAFE = True
@@ -142,7 +148,7 @@ class ActionExecutor:
         else:
             abs_x = int(round(x / self.coordinate_scale * self.image_width))
             abs_y = int(round(y / self.coordinate_scale * self.image_height))
-        return abs_x, abs_y
+        return abs_x + self.display_offset_x, abs_y + self.display_offset_y
     
     def _get_coordinates_from_box(self, box: any) -> Tuple[int, int]:
         """
@@ -491,7 +497,9 @@ def execute_action(
     image_height: int,
     coordinate_space: str = 'relative',
     coordinate_scale: float = 1000,
-    verbose: bool = True
+    verbose: bool = True,
+    display_offset_x: int = 0,
+    display_offset_y: int = 0,
 ) -> Union[str, List[str]]:
     """
     便捷函数：执行动作
@@ -503,6 +511,8 @@ def execute_action(
         coordinate_space: 坐标空间
         coordinate_scale: 相对坐标量程
         verbose: 是否打印详细日志
+        display_offset_x: 目标显示器在虚拟桌面的 X 偏移
+        display_offset_y: 目标显示器在虚拟桌面的 Y 偏移
         
     Returns:
         Union[str, List[str]]: 执行结果
@@ -512,6 +522,8 @@ def execute_action(
         image_height=image_height,
         coordinate_space=coordinate_space,
         coordinate_scale=coordinate_scale,
-        verbose=verbose
+        verbose=verbose,
+        display_offset_x=display_offset_x,
+        display_offset_y=display_offset_y,
     )
     return executor.execute(action)

@@ -74,7 +74,7 @@ python -m computer_use
 - 左右键编辑当前输入
 - 直接粘贴长文本
 - 历史记录持久化到 `~/.computer_use_history`
-- 输入 slash 命令并自动补齐命令名，例如 `/status`、`/clear`、`/compact`、`/exit`
+- 输入 slash 命令并自动补齐命令名，例如 `/status`、`/display`、`/clear`、`/compact`、`/exit`
 
 如果运行环境中缺少 `prompt_toolkit`，CLI 会自动回退到基础 `input()` 模式。
 
@@ -106,6 +106,7 @@ python -m computer_use "打开浏览器"
 | 思考档位 | `REASONING_EFFORT` | `medium` | 方舟思考档位，可选 `minimal` / `low` / `medium` / `high` |
 | 坐标空间 | `COORDINATE_SPACE` | `relative` | 坐标空间，可选 `relative` / `pixel` |
 | 坐标量程 | `COORDINATE_SCALE` | `1000` | `relative` 坐标的量程，例如 `1` / `100` / `1000` |
+| 目标显示器 | `DISPLAY_INDEX` | `0` | 截图和动作执行所使用的显示器编号，`0` 表示主显示器 |
 | 模型截图尺寸 | `SCREENSHOT_SIZE` | - | 传给模型前的截图宽高，仅支持相同宽高值，例如 `1024` 表示缩放为 `1024x1024` |
 | 上下文截图窗口 | `MAX_CONTEXT_SCREENSHOTS` | `5` | 多轮上下文中最多保留的截图数量，包含当前轮 |
 | 注入执行反馈 | `INCLUDE_EXECUTION_FEEDBACK` | `false` | 是否将历史执行结果和失败原因注入多轮上下文 |
@@ -128,6 +129,7 @@ THINKING_MODE=auto
 REASONING_EFFORT=medium
 COORDINATE_SPACE=relative
 COORDINATE_SCALE=1000
+DISPLAY_INDEX=0
 SCREENSHOT_SIZE=
 MAX_CONTEXT_SCREENSHOTS=5
 INCLUDE_EXECUTION_FEEDBACK=false
@@ -163,9 +165,12 @@ CONTEXT_LOG_DIR=./logs
 
 如果设置了 `SCREENSHOT_SIZE` 或 `--screenshot-size`，工具会先把屏幕截图强制缩放为 `NxN` 再传给模型。目前仅支持宽高相同的正方形尺寸。启用后，`pixel` 坐标会按“模型图尺寸 -> 真实屏幕尺寸”自动换算，避免点击偏移。
 
+如果设置了 `DISPLAY_INDEX` 或 `--display-index`，工具会只截取该显示器的画面，并将模型输出的局部坐标自动换算到虚拟桌面绝对坐标后再执行点击、拖拽和滚动。交互模式下还可以通过 `/display <index>` 运行时切换目标显示器，成功后会同步写回项目 `.env`。
+
 交互模式下：
 
 - 可通过 `/status` 查看本次会话真正生效的参数
+- 可通过 `/display <index>` 切换当前交互会话的目标显示器，并持久化到项目 `.env`
 - 可通过 `/clear` 清空当前交互会话的多轮上下文历史
 - 可通过 `/compact` 手动压缩当前交互会话的旧历史文本上下文
 - 多条用户输入会持续追加到同一会话历史中，而不是按输入重置上下文
@@ -194,6 +199,7 @@ python -m computer_use [指令] [选项]
 | `--reasoning-effort <level>` | `-r` | 设置方舟思考档位，取值 `minimal` / `low` / `medium` / `high` |
 | `--coordinate-space <space>` | - | 设置坐标空间，取值 `relative` / `pixel` |
 | `--coordinate-scale <value>` | - | 设置 `relative` 坐标量程，例如 `1` / `100` / `1000` |
+| `--display-index <index>` | - | 设置目标显示器编号，`0` 表示主显示器 |
 | `--screenshot-size <value>` | - | 设置传给模型的截图宽高，仅支持正方形，例如 `1024` 表示 `1024x1024` |
 | `--max-context-screenshots <count>` | - | 设置多轮上下文中保留的截图数量，包含当前轮 |
 | `--include-execution-feedback` | - | 启用执行反馈注入 |
@@ -216,6 +222,9 @@ python -m computer_use "打开浏览器"
 
 # 指定模型
 python -m computer_use "打开微信" --model doubao-seed-1-6-vision-250815
+
+# 指定第 2 台显示器作为目标屏幕
+python -m computer_use "打开微信" --display-index 1
 
 # 指定最大步数
 python -m computer_use "搜索 Python 教程" --max-steps 10

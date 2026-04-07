@@ -574,6 +574,78 @@ class CliPromptTests(unittest.TestCase):
         self.assertIn('模型: fake-model', printed)
         self.assertNotIn('[开始执行] /status', printed)
 
+    def test_interactive_mode_handles_display_command_without_running_agent(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.run_calls = []
+                self.clear_calls = 0
+                self.compact_calls = 0
+                self.set_display_calls = []
+                self.persist_display_calls = []
+                self.model = 'fake-model'
+                self.thinking_mode = 'auto'
+                self.reasoning_effort = 'medium'
+                self.skills = []
+                self.display_index = kwargs.get('display_index', 0)
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                self.run_calls.append(instruction)
+                return {'success': True, 'steps': [], 'final_response': 'done'}
+
+            def format_effective_status(self):
+                return f'[生效参数]\n  模型: fake-model\n  目标显示器: {self.display_index}'
+
+            def clear_session_context(self):
+                self.clear_calls += 1
+
+            def compact_session_context(self, manual=False):
+                self.compact_calls += 1
+                return True
+
+            def set_display_index(self, display_index):
+                self.set_display_calls.append(display_index)
+                self.display_index = display_index
+                return {
+                    'index': display_index,
+                    'x': -1440,
+                    'y': 90,
+                    'width': 1280,
+                    'height': 720,
+                    'is_primary': False,
+                }
+
+            def persist_display_index(self):
+                self.persist_display_calls.append(self.display_index)
+                return '.env'
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+        output = io.StringIO()
+
+        with redirect_stdout(output), mock.patch.object(
+            self.cli, 'ensure_supported_python'
+        ), mock.patch.object(
+            self.cli, '_create_prompt_session', return_value=None
+        ), mock.patch.object(
+            builtins, 'input', side_effect=['/display 1', '/status', '/exit']
+        ):
+            self.cli.interactive_mode(verbose=False)
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        self.assertEqual(fake_agent_instances[0].run_calls, [])
+        self.assertEqual(fake_agent_instances[0].set_display_calls, [1])
+        self.assertEqual(fake_agent_instances[0].persist_display_calls, [1])
+        printed = output.getvalue()
+        self.assertIn('[已切换] 当前目标显示器: 1', printed)
+        self.assertNotIn('[已持久化]', printed)
+        self.assertIn('目标显示器: 1', printed)
+        self.assertNotIn('[开始执行] /display 1', printed)
+
     def test_interactive_mode_handles_clear_command_without_running_agent(self):
         fake_agent_instances = []
 
@@ -669,7 +741,7 @@ class CliPromptTests(unittest.TestCase):
         self.assertEqual(fake_agent_instances[0].run_calls, ['打开计算器'])
         printed = output.getvalue()
         self.assertIn('[命令错误] 未知命令: /unknown', printed)
-        self.assertIn('[可用命令] /clear, /compact, /exit, /status', printed)
+        self.assertIn('[可用命令] /clear, /compact, /display, /exit, /status', printed)
 
     def test_interactive_mode_exits_via_exit_command(self):
         fake_agent_instances = []
@@ -844,6 +916,11 @@ class CliPromptTests(unittest.TestCase):
         compact_completions = list(completer.get_completions(compact_document, None))
         self.assertEqual(len(compact_completions), 1)
         self.assertEqual(compact_completions[0].text, '/compact')
+
+        display_document = types.SimpleNamespace(text_before_cursor='/di')
+        display_completions = list(completer.get_completions(display_document, None))
+        self.assertEqual(len(display_completions), 1)
+        self.assertEqual(display_completions[0].text, '/display')
 
         non_command = types.SimpleNamespace(text_before_cursor='打开计算器')
         self.assertEqual(list(completer.get_completions(non_command, None)), [])

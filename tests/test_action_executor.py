@@ -384,6 +384,31 @@ class ActionExecutorHotkeyTests(unittest.TestCase):
         )
         self.assertEqual(result, '单击 (1000, 0)')
 
+    def test_click_adds_display_offset_to_absolute_coordinates(self):
+        executor = self.action_executor.ActionExecutor(
+            image_width=200,
+            image_height=100,
+            coordinate_space='pixel',
+            display_offset_x=-1440,
+            display_offset_y=90,
+            verbose=False,
+        )
+
+        result = executor.execute(
+            {
+                'action_type': 'click',
+                'action_inputs': {
+                    'point': [25, 50],
+                },
+            }
+        )
+
+        self.assertEqual(
+            self.fake_pyautogui.click_calls,
+            [(( -1415, 140), {'button': 'left', 'clicks': 1})],
+        )
+        self.assertEqual(result, '单击 (-1415, 140)')
+
     def test_wait_uses_explicit_seconds(self):
         executor = self.action_executor.ActionExecutor(
             image_width=200,

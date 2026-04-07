@@ -78,6 +78,7 @@ class Config:
     DEFAULTS = {
         'ARK_MODEL': 'doubao-seed-1-6-vision-250815',
         'ARK_BASE_URL': 'http://ark.cn-beijing.volces.com/api/v3',
+        'DISPLAY_INDEX': '0',
         'NATURAL_SCROLL': '',
         'CONTEXT_LOG_DIR': './logs',
         'SAVE_CONTEXT_LOG': 'true',
@@ -228,6 +229,14 @@ class Config:
     def temperature(self) -> float:
         """模型温度参数"""
         return self.get_float('TEMPERATURE', 0.0)
+
+    @property
+    def display_index(self) -> int:
+        """目标显示器编号。"""
+        index = self.get_int('DISPLAY_INDEX', 0)
+        if index < 0:
+            raise ValueError('DISPLAY_INDEX 不能小于 0')
+        return index
     
     @property
     def max_steps(self) -> int:
@@ -328,6 +337,48 @@ class Config:
             return result.stdout.strip() == '1'
         except Exception:
             return True
+
+    def persist_value(
+        self,
+        key: str,
+        value: str,
+        env_path: Optional[Path] = None,
+    ) -> str:
+        """将配置项持久化到项目 .env 文件。"""
+        target_path = Path(env_path or '.env').expanduser()
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        lines = []
+        if target_path.exists():
+            lines = target_path.read_text(encoding='utf-8').splitlines()
+
+        serialized_value = str(value)
+        updated = False
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#') and '=' in line:
+                existing_key, _ = line.split('=', 1)
+                if existing_key.strip() == key:
+                    new_lines.append(f'{key}={serialized_value}')
+                    updated = True
+                    continue
+            new_lines.append(line)
+
+        if not updated:
+            new_lines.append(f'{key}={serialized_value}')
+
+        content = '\n'.join(new_lines).rstrip('\n') + '\n'
+        target_path.write_text(content, encoding='utf-8')
+        self._config[key] = serialized_value
+        self._explicit_keys.add(key)
+        return str(target_path)
+
+    def persist_display_index(self, display_index: int) -> str:
+        """将目标显示器编号持久化到项目配置。"""
+        if int(display_index) < 0:
+            raise ValueError('display_index 不能小于 0')
+        return self.persist_value('DISPLAY_INDEX', str(int(display_index)))
 
 
 # 全局配置实例

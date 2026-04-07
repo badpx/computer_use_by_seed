@@ -2,6 +2,7 @@
 volcengine-python-sdk[ark]
 pyautogui>=0.9.54
 Pillow>=10.0.0
+mss>=9.0.1
 pyperclip>=1.8.2
 python-dotenv>=1.0.0
 prompt_toolkit>=3.0.0

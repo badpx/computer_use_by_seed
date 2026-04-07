@@ -36,6 +36,9 @@ class ContextLogger:
         max_context_screenshots: Optional[int] = None,
         include_execution_feedback: Optional[bool] = None,
         log_full_messages: Optional[bool] = None,
+        display_index: Optional[int] = None,
+        display_bounds: Optional[list[int]] = None,
+        display_is_primary: Optional[bool] = None,
     ) -> Optional[str]:
         """开始一个新任务并创建日志文件。"""
         if not self.enabled:
@@ -59,6 +62,9 @@ class ContextLogger:
             max_context_screenshots=max_context_screenshots,
             include_execution_feedback=include_execution_feedback,
             log_full_messages=log_full_messages,
+            display_index=display_index,
+            display_bounds=display_bounds,
+            display_is_primary=display_is_primary,
         )
 
         return self.task_id

@@ -249,6 +249,46 @@ def _handle_status_command(context: InteractiveCommandContext, args_text: str) -
     print()
 
 
+def _handle_display_command(context: InteractiveCommandContext, args_text: str) -> None:
+    """切换当前交互会话的目标显示器并持久化配置。"""
+    target_text = args_text.strip()
+    if not target_text:
+        print()
+        print('[命令错误] 用法: /display <index>')
+        print()
+        return
+
+    try:
+        target_index = int(target_text)
+    except ValueError:
+        print()
+        print(f'[命令错误] 显示器编号必须是整数: {target_text}')
+        print()
+        return
+
+    try:
+        display_info = context.agent.set_display_index(target_index)
+    except Exception as exc:
+        print()
+        print(f'[切换失败] {exc}')
+        print()
+        return
+
+    print()
+    print(
+        f"[已切换] 当前目标显示器: {display_info['index']} "
+        f"({display_info['width']}x{display_info['height']} @ "
+        f"{display_info['x']},{display_info['y']})"
+    )
+
+    try:
+        context.agent.persist_display_index()
+    except Exception as exc:
+        print(f'[持久化失败] 运行时已切换，但写入配置失败: {exc}')
+
+    print()
+
+
 def _handle_clear_command(context: InteractiveCommandContext, args_text: str) -> None:
     """清理当前交互会话的多轮上下文历史。"""
     del args_text
@@ -290,6 +330,11 @@ def _build_interactive_commands() -> Dict[str, InteractiveCommand]:
             name='/compact',
             handler=_handle_compact_command,
             summary='压缩多轮对话上下文',
+        ),
+        '/display': InteractiveCommand(
+            name='/display',
+            handler=_handle_display_command,
+            summary='切换目标显示器并持久化',
         ),
         '/exit': InteractiveCommand(
             name='/exit',
@@ -456,10 +501,15 @@ def print_banner():
 def print_config_info(
     log_full_messages: bool = False,
     screenshot_size: Optional[int] = None,
+    display_index: Optional[int] = None,
 ):
     """打印调试用配置信息。"""
     print("[配置信息]")
     print(f"  API地址: {config.base_url}")
+    effective_display_index = (
+        config.display_index if display_index is None else display_index
+    )
+    print(f"  目标显示器: {effective_display_index}")
     effective_screenshot_size = (
         config.screenshot_size if screenshot_size is None else screenshot_size
     )
@@ -482,6 +532,7 @@ def interactive_mode(
     coordinate_scale: Optional[float] = None,
     screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
+    display_index: Optional[int] = None,
     include_execution_feedback: Optional[bool] = None,
     log_full_messages: bool = False,
     natural_scroll: Optional[bool] = None,
@@ -501,6 +552,7 @@ def interactive_mode(
         coordinate_scale: 相对坐标量程
         screenshot_size: 传给模型前的截图缩放尺寸
         max_context_screenshots: 多轮上下文截图窗口
+        display_index: 目标显示器编号
         include_execution_feedback: 是否注入执行反馈
         log_full_messages: 是否在上下文日志中记录完整 messages
         natural_scroll: 是否使用自然滚动
@@ -511,6 +563,7 @@ def interactive_mode(
         print_config_info(
             log_full_messages=log_full_messages,
             screenshot_size=screenshot_size,
+            display_index=display_index,
         )
     
     print("[交互模式]")
@@ -535,6 +588,7 @@ def interactive_mode(
             coordinate_scale=coordinate_scale,
             screenshot_size=screenshot_size,
             max_context_screenshots=max_context_screenshots,
+            display_index=display_index,
             include_execution_feedback=include_execution_feedback,
             log_full_messages=log_full_messages,
             natural_scroll=natural_scroll,
@@ -641,6 +695,7 @@ def single_task_mode(
     coordinate_scale: Optional[float] = None,
     screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
+    display_index: Optional[int] = None,
     include_execution_feedback: Optional[bool] = None,
     log_full_messages: bool = False,
     natural_scroll: Optional[bool] = None,
@@ -661,6 +716,7 @@ def single_task_mode(
         coordinate_scale: 相对坐标量程
         screenshot_size: 传给模型前的截图缩放尺寸
         max_context_screenshots: 多轮上下文截图窗口
+        display_index: 目标显示器编号
         include_execution_feedback: 是否注入执行反馈
         log_full_messages: 是否在上下文日志中记录完整 messages
         natural_scroll: 是否使用自然滚动
@@ -675,6 +731,7 @@ def single_task_mode(
             print_config_info(
                 log_full_messages=log_full_messages,
                 screenshot_size=screenshot_size,
+                display_index=display_index,
             )
         print(f"[任务] {instruction}\n")
 
@@ -691,6 +748,7 @@ def single_task_mode(
         coordinate_scale=coordinate_scale,
         screenshot_size=screenshot_size,
         max_context_screenshots=max_context_screenshots,
+        display_index=display_index,
         include_execution_feedback=include_execution_feedback,
         log_full_messages=log_full_messages,
         natural_scroll=natural_scroll,
@@ -799,6 +857,12 @@ def main():
         help='多轮上下文中最多保留的截图数量（包含当前轮，默认从配置读取）'
     )
 
+    parser.add_argument(
+        '--display-index',
+        type=int,
+        help='设置目标显示器编号，0 表示主显示器（默认从配置读取）'
+    )
+
     execution_feedback_group = parser.add_mutually_exclusive_group()
     execution_feedback_group.add_argument(
         '--include-execution-feedback',
@@ -872,6 +936,7 @@ def main():
     coordinate_scale = None
     screenshot_size = None
     max_context_screenshots = None
+    display_index = None
     include_execution_feedback = None
     log_full_messages = args.verbose
     if args.natural_scroll:
@@ -891,6 +956,8 @@ def main():
         screenshot_size = args.screenshot_size
     if args.max_context_screenshots is not None:
         max_context_screenshots = args.max_context_screenshots
+    if args.display_index is not None:
+        display_index = args.display_index
     if args.include_execution_feedback:
         include_execution_feedback = True
     elif args.no_execution_feedback:
@@ -916,6 +983,7 @@ def main():
                 coordinate_scale=coordinate_scale,
                 screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
+                display_index=display_index,
                 include_execution_feedback=include_execution_feedback,
                 log_full_messages=log_full_messages,
                 natural_scroll=natural_scroll,
@@ -937,6 +1005,7 @@ def main():
                 coordinate_scale=coordinate_scale,
                 screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
+                display_index=display_index,
                 include_execution_feedback=include_execution_feedback,
                 log_full_messages=log_full_messages,
                 natural_scroll=natural_scroll,

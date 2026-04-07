@@ -43,6 +43,7 @@ def check_dependencies():
         'volcenginesdkarkruntime',
         'pyautogui',
         'PIL',
+        'mss',
         'pyperclip',
         'dotenv',
         'prompt_toolkit',
@@ -83,6 +84,7 @@ def check_config():
         
         print(f"  ✓ 模型: {config.model}")
         print(f"  ✓ API地址: {config.base_url}")
+        print(f"  ✓ 目标显示器: {config.display_index}")
         print(f"  ✓ 上下文日志目录: {config.context_log_dir}")
         
         return True

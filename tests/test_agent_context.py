@@ -96,6 +96,7 @@ class AgentContextTests(unittest.TestCase):
         self.exec_outcomes = []
         self.executor_inits = []
         self.capture_index = 0
+        self.capture_calls = []
         self.log_dir = Path(self.temp_dir.name) / 'logs'
         self.capture_dir = Path(self.temp_dir.name) / 'screens'
         self.capture_dir.mkdir(parents=True, exist_ok=True)
@@ -107,11 +108,19 @@ class AgentContextTests(unittest.TestCase):
 
     def _load_agent_module(self):
         screenshot_stub = types.ModuleType('computer_use.screenshot')
-        screenshot_stub.screenshot_manager = object()
+        screenshot_stub.screenshot_manager = types.SimpleNamespace()
         screenshot_stub.capture_screenshot = lambda *args, **kwargs: (
             FakeScreenshot(),
             None,
         )
+        screenshot_stub.resolve_display = lambda display_index=None: {
+            'index': 0 if display_index is None else int(display_index),
+            'x': 0,
+            'y': 0,
+            'width': 1280,
+            'height': 720,
+            'is_primary': (display_index in (None, 0)),
+        }
 
         action_executor_stub = types.ModuleType('computer_use.action_executor')
 
@@ -147,10 +156,23 @@ class AgentContextTests(unittest.TestCase):
         )
         agent_module.time.sleep = lambda _: None
         agent_module.capture_screenshot = self._fake_capture
+        agent_module.resolve_display = self._fake_resolve_display
         agent_module.ActionExecutor = self._build_executor()
         return agent_module
 
-    def _fake_capture(self):
+    def _fake_resolve_display(self, display_index=None):
+        index = 0 if display_index is None else int(display_index)
+        return {
+            'index': index,
+            'x': -1440 if index == 1 else index * 100,
+            'y': 90 if index == 1 else index * 10,
+            'width': 1280,
+            'height': 720,
+            'is_primary': index == 0,
+        }
+
+    def _fake_capture(self, *args, **kwargs):
+        self.capture_calls.append(kwargs)
         self.capture_index += 1
         screenshot_path = self.capture_dir / f'step_{self.capture_index}.png'
         FakeScreenshot().save(screenshot_path)
@@ -532,6 +554,7 @@ class AgentContextTests(unittest.TestCase):
             coordinate_scale=1000,
             max_context_screenshots=3,
             include_execution_feedback=True,
+            display_index=1,
             verbose=False,
         )
 
@@ -541,6 +564,7 @@ class AgentContextTests(unittest.TestCase):
         self.assertIn('坐标量程: 1000', rendered)
         self.assertIn('上下文截图窗口: 3', rendered)
         self.assertIn('注入执行反馈: 启用', rendered)
+        self.assertIn('目标显示器: 1', rendered)
 
     def test_system_prompt_includes_runtime_timezone_date_and_weekday(self):
         agent = self._make_agent(verbose=False)
@@ -1007,6 +1031,38 @@ class AgentContextTests(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertTrue(self.executor_inits)
         self.assertEqual(self.executor_inits[0]['natural_scroll'], False)
+
+    def test_agent_passes_display_index_to_capture_executor_and_logs(self):
+        self.responses[:] = [
+            "Thought: first step\nAction: wait()",
+            "Thought: done\nAction: finished(content='ok')",
+        ]
+        self.exec_outcomes[:] = ['waited']
+
+        agent = self._make_agent(
+            max_steps=2,
+            display_index=1,
+            save_context_log=True,
+            context_log_dir=str(self.log_dir),
+        )
+        result = agent.run('Use second display')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(self.capture_calls[0]['display_index'], 1)
+        self.assertEqual(self.executor_inits[0]['display_offset_x'], -1440)
+        self.assertEqual(self.executor_inits[0]['display_offset_y'], 90)
+
+        log_files = list(self.log_dir.glob('task_*.jsonl'))
+        records = [
+            json.loads(line)
+            for line in log_files[0].read_text(encoding='utf-8').splitlines()
+        ]
+        task_start = next(record for record in records if record['event'] == 'task_start')
+        model_call = next(record for record in records if record['event'] == 'model_call')
+        self.assertEqual(task_start['display_index'], 1)
+        self.assertEqual(task_start['display_bounds'], [-1440, 90, 1280, 720])
+        self.assertEqual(model_call['display_index'], 1)
+        self.assertEqual(model_call['display_bounds'], [-1440, 90, 1280, 720])
 
     def test_agent_passes_reasoning_effort_and_thinking_to_chat_api(self):
         self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
