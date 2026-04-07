@@ -385,6 +385,33 @@ class AgentContextTests(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertEqual(result['final_response'], 'ok')
 
+    def test_model_response_log_keeps_raw_response_equal_to_content_only(self):
+        self.responses[:] = [
+            {
+                'content': '',
+                'reasoning_content': "Thought: done\nAction: finished(content='ok')",
+            }
+        ]
+
+        agent = self._make_agent(
+            save_context_log=True,
+            context_log_dir=str(self.log_dir),
+        )
+        result = agent.run('Keep raw response semantic stable')
+
+        self.assertTrue(result['success'])
+        log_files = list(self.log_dir.glob('task_*.jsonl'))
+        self.assertEqual(len(log_files), 1)
+
+        records = [
+            json.loads(line)
+            for line in log_files[0].read_text(encoding='utf-8').splitlines()
+        ]
+        model_response = next(record for record in records if record['event'] == 'model_response')
+
+        self.assertEqual(model_response['raw_response'], '')
+        self.assertEqual(model_response['reasoning'], "Thought: done\nAction: finished(content='ok')")
+
     def test_run_prefers_content_over_reasoning_content(self):
         self.responses[:] = [
             {

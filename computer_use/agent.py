@@ -326,7 +326,7 @@ class ComputerUseAgent:
                     instruction=instruction,
                     step=self.current_step,
                     **self._build_logged_model_response(response_obj),
-                    raw_response=response,
+                    raw_response=self._extract_message_content(response_obj),
                     usage=usage,
                 )
                 
@@ -1122,6 +1122,18 @@ class ComputerUseAgent:
 
     def _extract_response_text(self, response_obj: Any) -> str:
         """提取模型可解析文本，优先 content，缺失时回退 reasoning_content。"""
+        content = self._extract_message_content(response_obj)
+        if content.strip():
+            return content
+
+        reasoning_content = self._extract_reasoning_content(response_obj)
+        if isinstance(reasoning_content, str):
+            return reasoning_content
+
+        return ''
+
+    def _extract_message_content(self, response_obj: Any) -> str:
+        """提取模型 message.content 原文，用于日志等需要保留原始语义的场景。"""
         message = None
         choices = getattr(response_obj, 'choices', None) or []
         if choices:
@@ -1130,8 +1142,19 @@ class ComputerUseAgent:
             return ''
 
         content = getattr(message, 'content', None)
-        if isinstance(content, str) and content.strip():
+        if isinstance(content, str):
             return content
+
+        return ''
+
+    def _extract_reasoning_content(self, response_obj: Any) -> str:
+        """提取模型 message.reasoning_content 原文。"""
+        message = None
+        choices = getattr(response_obj, 'choices', None) or []
+        if choices:
+            message = getattr(choices[0], 'message', None)
+        if message is None:
+            return ''
 
         reasoning_content = getattr(message, 'reasoning_content', None)
         if isinstance(reasoning_content, str):
@@ -1358,17 +1381,8 @@ class ComputerUseAgent:
 
     def _build_logged_model_response(self, response_obj: Any) -> Dict[str, str]:
         """提取方舟响应中的 reasoning 字段用于日志记录。"""
-        message = None
-        choices = getattr(response_obj, 'choices', None) or []
-        if choices:
-            message = getattr(choices[0], 'message', None)
-
-        reasoning = ''
-        if message is not None:
-            reasoning = getattr(message, 'reasoning_content', '') or ''
-
         return {
-            'reasoning': reasoning.strip(),
+            'reasoning': self._extract_reasoning_content(response_obj).strip(),
         }
 
     def _build_screenshot_item(
