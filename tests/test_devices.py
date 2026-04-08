@@ -435,6 +435,7 @@ class DeviceCommandMapperTests(unittest.TestCase):
         self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['open_app'], 'open_app')
         self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['press_home'], 'press_home')
         self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['press_back'], 'press_back')
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['swipe'], 'swipe')
 
     def test_map_action_to_command_uses_shared_mapping_for_long_press(self):
         from computer_use.devices import command_mapper
@@ -502,6 +503,28 @@ class DeviceCommandMapperTests(unittest.TestCase):
         self.assertEqual(open_app.payload['app_name'], 'com.demo.app')
         self.assertEqual(home.command_type, 'nav_home')
         self.assertEqual(back.command_type, 'nav_back')
+
+    def test_map_action_to_command_uses_shared_mapping_for_swipe(self):
+        from computer_use.devices import command_mapper
+
+        with mock.patch.dict(
+            command_mapper.ACTION_TYPE_TO_COMMAND_TYPE,
+            {'swipe': 'phone_swipe'},
+            clear=False,
+        ):
+            command = command_mapper.map_action_to_command(
+                {
+                    'action_type': 'swipe',
+                    'action_inputs': {
+                        'start_point': [1, 2],
+                        'end_point': [3, 4],
+                    },
+                }
+            )
+
+        self.assertEqual(command.command_type, 'phone_swipe')
+        self.assertEqual(command.payload['start_point'], [1, 2])
+        self.assertEqual(command.payload['end_point'], [3, 4])
 
     def test_normalize_relative_click_coordinates_to_frame_pixels(self):
         from computer_use.devices.command_mapper import map_action_to_command

@@ -175,6 +175,71 @@ class AndroidAdbDeviceAdapterTests(unittest.TestCase):
             check=False,
         )
 
+    def test_swipe_maps_to_input_swipe(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+        command = DeviceCommand(
+            'swipe',
+            {'start_point': [1, 2], 'end_point': [3, 4], 'duration_ms': 900},
+        )
+
+        with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.subprocess.run',
+            return_value=self._completed(
+                [
+                    'adb',
+                    'shell',
+                    'input',
+                    'swipe',
+                    '1',
+                    '2',
+                    '3',
+                    '4',
+                    '900',
+                ]
+            ),
+        ) as run_mock:
+            adapter.execute_command(command)
+
+        run_mock.assert_called_once_with(
+            ['adb', 'shell', 'input', 'swipe', '1', '2', '3', '4', '900'],
+            capture_output=True,
+            check=False,
+        )
+
+    def test_wait_sleeps_for_explicit_seconds_without_adb_call(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+        command = DeviceCommand('wait', {'seconds': 3})
+
+        with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.time.sleep'
+        ) as sleep_mock, mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.subprocess.run'
+        ) as run_mock:
+            result = adapter.execute_command(command)
+
+        self.assertEqual(result, '等待 3 秒')
+        sleep_mock.assert_called_once_with(3.0)
+        run_mock.assert_not_called()
+
+    def test_wait_clamps_to_one_and_sixty_seconds(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+
+        with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.time.sleep'
+        ) as sleep_mock:
+            low_result = adapter.execute_command(DeviceCommand('wait', {'seconds': 0}))
+            high_result = adapter.execute_command(DeviceCommand('wait', {'seconds': 120}))
+
+        self.assertEqual(low_result, '等待 1 秒')
+        self.assertEqual(high_result, '等待 60 秒')
+        sleep_mock.assert_has_calls([mock.call(1.0), mock.call(60.0)])
+
     def test_type_text_trailing_newline_sends_enter(self):
         from computer_use.devices.base import DeviceCommand
 

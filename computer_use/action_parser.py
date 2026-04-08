@@ -19,6 +19,7 @@ class ActionParser:
         'left_double',
         'right_single',
         'drag',
+        'swipe',
         'long_press',
         'open_app',
         'press_home',

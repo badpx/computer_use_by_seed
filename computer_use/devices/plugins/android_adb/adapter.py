@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import subprocess
+import time
 from typing import Any, Dict, List, Optional
 
 from ...base import DeviceAdapter, DeviceCommand, DeviceFrame
@@ -108,6 +109,33 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
             )
             return 'drag 执行成功'
 
+        if command_type == 'swipe':
+            start_point = self._require_point(
+                payload,
+                'start_point',
+                fallback_keys=['start_box'],
+            )
+            end_point = self._require_point(
+                payload,
+                'end_point',
+                fallback_keys=['end_box'],
+            )
+            duration_ms = self._resolve_duration_ms(payload)
+            self._run_adb(
+                [
+                    'shell',
+                    'input',
+                    'swipe',
+                    str(start_point[0]),
+                    str(start_point[1]),
+                    str(end_point[0]),
+                    str(end_point[1]),
+                    str(duration_ms),
+                ],
+                action_label='swipe',
+            )
+            return 'swipe 执行成功'
+
         if command_type == 'type_text':
             return self._execute_type_text(payload)
 
@@ -165,6 +193,12 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
                 action_label='press_back',
             )
             return 'press_back 执行成功'
+
+        if command_type == 'wait':
+            seconds = self._resolve_wait_seconds(payload)
+            time.sleep(seconds)
+            seconds_text = int(seconds) if seconds.is_integer() else seconds
+            return f'等待 {seconds_text} 秒'
 
         raise ValueError(f'android_adb 不支持命令类型: {command_type}')
 
@@ -297,6 +331,14 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
         if direction == 'left':
             return f'HSCROLL,{-steps}'
         raise ValueError(f'android_adb 不支持滚动方向: {direction}')
+
+    def _resolve_wait_seconds(self, payload: Dict[str, Any], default: float = 5) -> float:
+        raw_value = payload.get('seconds', payload.get('duration', default))
+        try:
+            seconds = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'android_adb wait seconds 格式无效: {raw_value}') from exc
+        return max(1.0, min(60.0, seconds))
 
     def _escape_text(self, value: str) -> str:
         return value.replace('%', '%25').replace(' ', '%s')

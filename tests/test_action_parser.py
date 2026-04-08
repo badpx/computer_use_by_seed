@@ -53,6 +53,17 @@ class ActionParserCoordinateTests(unittest.TestCase):
         self.assertEqual(parsed['action_inputs']['start_point'], [236.0, 470.0])
         self.assertEqual(parsed['action_inputs']['end_point'], [544.0, 470.0])
 
+    def test_parse_swipe_coordinates_with_optional_duration(self):
+        parsed = parse_action(
+            "Action: swipe(start_point='<point>236 470</point>', "
+            "end_point='<point>544 470</point>', duration=800)"
+        )
+
+        self.assertEqual(parsed['action_type'], 'swipe')
+        self.assertEqual(parsed['action_inputs']['start_point'], [236.0, 470.0])
+        self.assertEqual(parsed['action_inputs']['end_point'], [544.0, 470.0])
+        self.assertEqual(parsed['action_inputs']['duration'], 800.0)
+
     def test_extract_finished_action_from_natural_language_response(self):
         parsed = parse_action(
             "太好了！现在，多余的中间横线已经擦掉了，完全符合要求，任务完成！"

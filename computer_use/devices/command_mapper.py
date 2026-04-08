@@ -14,6 +14,7 @@ ACTION_TYPE_TO_COMMAND_TYPE = {
     'right_single': 'right_click',
     'hover': 'move',
     'drag': 'drag',
+    'swipe': 'swipe',
     'hotkey': 'hotkey',
     'press': 'key_down',
     'keydown': 'key_down',
