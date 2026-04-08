@@ -372,6 +372,14 @@ class LocalDeviceAdapterTests(unittest.TestCase):
         self.assertEqual((frame.width, frame.height), (1, 1))
 
 class DeviceCommandMapperTests(unittest.TestCase):
+    def test_phone_action_mappings_exist_in_production_table(self):
+        from computer_use.devices import command_mapper
+
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['long_press'], 'long_press')
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['open_app'], 'open_app')
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['press_home'], 'press_home')
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['press_back'], 'press_back')
+
     def test_map_action_to_command_uses_shared_mapping_for_long_press(self):
         from computer_use.devices import command_mapper
 
