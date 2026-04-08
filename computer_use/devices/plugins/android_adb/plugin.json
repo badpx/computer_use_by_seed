@@ -1,0 +1,5 @@
+{
+  "name": "android_adb",
+  "description": "Operate an Android device over adb.",
+  "entrypoint": "plugin:create_adapter"
+}
