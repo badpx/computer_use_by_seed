@@ -3,10 +3,11 @@
 支持环境变量 > 配置文件 > 默认值的优先级加载
 """
 
+import json
 import os
 import subprocess
 import sys
-from typing import Optional
+from typing import Any, Optional
 from pathlib import Path
 
 THINKING_MODES = ('enabled', 'disabled', 'auto')
@@ -78,6 +79,9 @@ class Config:
     DEFAULTS = {
         'ARK_MODEL': 'doubao-seed-1-6-vision-250815',
         'ARK_BASE_URL': 'http://ark.cn-beijing.volces.com/api/v3',
+        'DEVICE_NAME': 'local',
+        'DEVICE_CONFIG_JSON': '',
+        'DEVICES_DIR': './devices',
         'DISPLAY_INDEX': '0',
         'NATURAL_SCROLL': '',
         'CONTEXT_LOG_DIR': './logs',
@@ -219,6 +223,31 @@ class Config:
     def model(self) -> str:
         """模型名称"""
         return self._config.get('ARK_MODEL', self.DEFAULTS['ARK_MODEL'])
+
+    @property
+    def device_name(self) -> str:
+        """设备插件名称。"""
+        return self._config.get('DEVICE_NAME', self.DEFAULTS['DEVICE_NAME']).strip() or 'local'
+
+    @property
+    def device_config(self) -> dict[str, Any]:
+        """设备插件私有配置。"""
+        raw = self._config.get('DEVICE_CONFIG_JSON', self.DEFAULTS['DEVICE_CONFIG_JSON'])
+        text = str(raw or '').strip()
+        if not text:
+            return {}
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f'DEVICE_CONFIG_JSON 不是合法 JSON: {exc}') from exc
+        if not isinstance(payload, dict):
+            raise ValueError('DEVICE_CONFIG_JSON 必须是 JSON 对象')
+        return payload
+
+    @property
+    def devices_dir(self) -> str:
+        """外部设备插件目录。"""
+        return self._config.get('DEVICES_DIR', self.DEFAULTS['DEVICES_DIR'])
     
     @property
     def base_url(self) -> str:

@@ -15,9 +15,11 @@ from typing import Callable, Dict, Any, List, Optional, Set, Tuple
 from volcenginesdkarkruntime import Ark
 
 from .config import config, normalize_coordinate_space, resolve_thinking_settings
-from .screenshot import capture_screenshot, resolve_display
 from .action_parser import parse_action
-from .action_executor import ActionExecutor
+from .devices import create_device_adapter
+from .devices.base import DeviceAdapter, DeviceCommand, DeviceFrame
+from .devices.command_mapper import map_action_to_command
+from .devices.helpers import frame_to_data_url, prepare_model_frame
 from .logging_utils import ContextLogger
 from .prompts import COMPUTER_USE_DOUBAO, SKILLS_PROMPT_ADDENDUM
 from .skills import Skill, discover_skills, skills_to_tools, load_skill
@@ -73,6 +75,10 @@ class ComputerUseAgent:
         max_steps: Optional[int] = None,
         natural_scroll: Optional[bool] = None,
         display_index: Optional[int] = None,
+        device_name: Optional[str] = None,
+        device_config: Optional[Dict[str, Any]] = None,
+        devices_dir: Optional[str] = None,
+        device_adapter: Optional[DeviceAdapter] = None,
         save_context_log: Optional[bool] = None,
         context_log_dir: Optional[str] = None,
         language: str = 'Chinese',
@@ -102,6 +108,10 @@ class ComputerUseAgent:
             max_steps: 最大执行步数，默认从配置读取
             natural_scroll: 是否使用自然滚动
             display_index: 目标显示器编号
+            device_name: 设备插件名称
+            device_config: 设备插件私有配置
+            devices_dir: 外部设备插件目录
+            device_adapter: 显式注入的设备适配器实例
             save_context_log: 是否保存上下文日志
             context_log_dir: 上下文日志目录
             language: 提示词语言
@@ -160,6 +170,15 @@ class ComputerUseAgent:
         )
         if self.display_index < 0:
             raise ValueError('display_index 不能小于 0')
+        self.device_name = (device_name or config.device_name).strip() or 'local'
+        self.device_config = dict(config.device_config)
+        if device_config:
+            self.device_config.update(device_config)
+        self.devices_dir = devices_dir or config.devices_dir
+        self.device_config.setdefault('display_index', self.display_index)
+        self.device_config.setdefault('natural_scroll', self.natural_scroll)
+        self.device_config.setdefault('coordinate_space', self.coordinate_space)
+        self.device_config.setdefault('coordinate_scale', self.coordinate_scale)
         self.save_context_log = (
             save_context_log if save_context_log is not None else config.save_context_log
         )
@@ -169,6 +188,7 @@ class ComputerUseAgent:
         self.verbose = verbose
         self.print_init_status = print_init_status
         self.persistent_session = persistent_session
+        self.device_config.setdefault('verbose', self.verbose)
         self.enable_skills = enable_skills if enable_skills is not None else config.enable_skills
         self.skills_dir = skills_dir or config.skills_dir
         self.skills: List[Skill] = discover_skills(self.skills_dir) if self.enable_skills else []
@@ -198,10 +218,15 @@ class ComputerUseAgent:
             log_dir=self.context_log_dir,
         )
         self._is_compacting = False
-        self.current_display_info = self._resolve_display_info(
-            self.display_index,
-            allow_fallback=True,
+        self.device: DeviceAdapter = create_device_adapter(
+            device_name=self.device_name,
+            device_config=self.device_config,
+            devices_dir=self.devices_dir,
+            adapter=device_adapter,
         )
+        self.device_name = getattr(self.device, 'device_name', self.device_name)
+        self.device.connect()
+        self.current_display_info = self._extract_display_info_from_device_status()
 
         # 当前步骤
         self.current_step = 0
@@ -240,10 +265,8 @@ class ComputerUseAgent:
             self._reset_session_state()
         self._reset_run_state()
         self._append_user_instruction_message(instruction)
-        self.current_display_info = self._resolve_display_info(
-            self.display_index,
-            allow_fallback=True,
-        )
+        self.current_display_info = self._extract_display_info_from_device_status()
+        device_status = self._safe_device_status()
 
         self.context_logger.start_task(
             instruction=instruction,
@@ -258,9 +281,12 @@ class ComputerUseAgent:
             max_context_screenshots=self.max_context_screenshots,
             include_execution_feedback=self.include_execution_feedback,
             log_full_messages=self.log_full_messages,
-            display_index=self.current_display_info['index'],
-            display_bounds=self._display_bounds_list(self.current_display_info),
-            display_is_primary=self.current_display_info['is_primary'],
+            display_index=self._display_index_for_logging(device_status),
+            display_bounds=self._display_bounds_for_logging(device_status),
+            display_is_primary=self._display_is_primary_for_logging(device_status),
+            device_name=self.device_name,
+            device_status=device_status,
+            device_target=self._safe_device_target(),
         )
         result['context_log_path'] = self.context_logger.current_log_path
         self._notify_runtime_status()
@@ -275,17 +301,14 @@ class ComputerUseAgent:
                     print(f"\n[步骤 {self.current_step}/{self.max_steps}]")
                 
                 # 1. 截图
-                self.current_display_info = self._resolve_display_info(
-                    self.display_index,
-                    allow_fallback=True,
-                )
-                screenshot, _ = capture_screenshot(display_index=self.display_index)
-                img_width, img_height = screenshot.size
-                model_screenshot = self._prepare_model_screenshot(screenshot)
-                model_img_width, model_img_height = model_screenshot.size
-                logged_screenshot_path = self._save_debug_screenshot(model_screenshot)
+                frame = self.device.capture_frame()
+                self.current_display_info = self._extract_display_info_from_frame(frame)
+                img_width, img_height = frame.width, frame.height
+                model_frame = prepare_model_frame(frame, screenshot_size=self.screenshot_size)
+                model_img_width, model_img_height = model_frame.width, model_frame.height
+                logged_screenshot_path = self._save_debug_screenshot(model_frame)
                 current_screenshot_item = self._build_screenshot_item(
-                    model_screenshot,
+                    model_frame,
                     logged_screenshot_path=logged_screenshot_path,
                 )
                 
@@ -327,9 +350,12 @@ class ComputerUseAgent:
                     'screenshot_path': logged_screenshot_path,
                     'screenshot_size': [model_img_width, model_img_height],
                     'original_screenshot_size': [img_width, img_height],
-                    'display_index': self.current_display_info['index'],
-                    'display_bounds': self._display_bounds_list(self.current_display_info),
-                    'display_is_primary': self.current_display_info['is_primary'],
+                    'device_name': self.device_name,
+                    'device_status': self._safe_device_status(),
+                    'device_target': self._safe_device_target(),
+                    'display_index': self._display_index_for_logging(),
+                    'display_bounds': self._display_bounds_for_logging(),
+                    'display_is_primary': self._display_is_primary_for_logging(),
                 }
                 if logged_messages is not None:
                     model_call_payload['messages'] = logged_messages
@@ -471,21 +497,16 @@ class ComputerUseAgent:
                     break
                 
                 # 5. 执行动作
-                executor = ActionExecutor(
-                    image_width=img_width,
-                    image_height=img_height,
-                    model_image_width=model_img_width,
-                    model_image_height=model_img_height,
-                    coordinate_space=self.coordinate_space,
-                    coordinate_scale=self.coordinate_scale,
-                    verbose=self.verbose,
-                    natural_scroll=self.natural_scroll,
-                    display_offset_x=self.current_display_info['x'],
-                    display_offset_y=self.current_display_info['y'],
-                )
-                
                 try:
-                    exec_result = executor.execute(action)
+                    exec_result = self.device.execute_command(
+                        self._build_device_command(
+                            action=action,
+                            image_width=img_width,
+                            image_height=img_height,
+                            model_image_width=model_img_width,
+                            model_image_height=model_img_height,
+                        )
+                    )
                 except Exception as e:
                     failure_reason = str(e)
                     step_elapsed_seconds = time.perf_counter() - step_start_time
@@ -1058,29 +1079,6 @@ class ComputerUseAgent:
         payload['bounds'] = self._display_bounds_list(payload)
         return payload
 
-    def _resolve_display_info(
-        self,
-        display_index: Optional[int] = None,
-        allow_fallback: bool = False,
-    ) -> Dict[str, Any]:
-        """解析当前目标显示器信息。"""
-        target_index = self.display_index if display_index is None else int(display_index)
-        try:
-            return self._normalize_display_info(resolve_display(target_index))
-        except ValueError as exc:
-            if not allow_fallback or target_index == 0:
-                raise
-            if '超出范围' not in str(exc):
-                raise
-
-            fallback_info = self._normalize_display_info(resolve_display(0))
-            self.display_index = 0
-            if self.verbose:
-                print(
-                    f"[警告] 目标显示器 {target_index} 不可用，已回退到主显示器 0"
-                )
-            return fallback_info
-
     def _display_bounds_list(self, display_info: Dict[str, Any]) -> List[int]:
         """返回 [x, y, width, height] 形式的显示器区域。"""
         return [
@@ -1090,43 +1088,134 @@ class ComputerUseAgent:
             int(display_info.get('height', 0)),
         ]
 
+    def _safe_device_status(self) -> Dict[str, Any]:
+        """获取设备状态；失败时回退为空字典。"""
+        try:
+            status = self.device.get_status()
+        except Exception:
+            return {}
+        return dict(status or {})
+
+    def _safe_device_target(self) -> Optional[Dict[str, Any]]:
+        """返回当前设备目标摘要。"""
+        target = getattr(self.device, 'target_summary', None)
+        if target is None:
+            return None
+        if isinstance(target, dict):
+            return dict(target)
+        return None
+
+    def _extract_display_info_from_frame(self, frame: DeviceFrame) -> Optional[Dict[str, Any]]:
+        """从设备帧元数据中提取显示区域信息。"""
+        display_info = (frame.metadata or {}).get('display')
+        if not isinstance(display_info, dict):
+            return self._extract_display_info_from_device_status()
+        return self._normalize_display_info(display_info)
+
+    def _extract_display_info_from_device_status(self) -> Optional[Dict[str, Any]]:
+        """从设备状态中提取显示区域信息。"""
+        status = self._safe_device_status()
+        display_info = None
+        if isinstance(status.get('display'), dict):
+            display_info = status['display']
+        elif {'display_index', 'display_bounds'}.issubset(status.keys()):
+            bounds = status.get('display_bounds') or [0, 0, 0, 0]
+            if len(bounds) == 4:
+                display_info = {
+                    'index': status.get('display_index', self.display_index),
+                    'x': bounds[0],
+                    'y': bounds[1],
+                    'width': bounds[2],
+                    'height': bounds[3],
+                    'is_primary': status.get('display_is_primary', False),
+                }
+        if not isinstance(display_info, dict):
+            return None
+        normalized = self._normalize_display_info(display_info)
+        self.display_index = int(normalized.get('index', self.display_index))
+        self.device_config['display_index'] = self.display_index
+        return normalized
+
+    def _display_index_for_logging(
+        self,
+        device_status: Optional[Dict[str, Any]] = None,
+    ) -> Optional[int]:
+        display_info = self.current_display_info or self._extract_display_info_from_device_status()
+        if display_info is not None:
+            return int(display_info.get('index', 0))
+        status = device_status or self._safe_device_status()
+        value = status.get('display_index')
+        return int(value) if value is not None else None
+
+    def _display_bounds_for_logging(
+        self,
+        device_status: Optional[Dict[str, Any]] = None,
+    ) -> Optional[List[int]]:
+        display_info = self.current_display_info or self._extract_display_info_from_device_status()
+        if display_info is not None:
+            return self._display_bounds_list(display_info)
+        status = device_status or self._safe_device_status()
+        bounds = status.get('display_bounds')
+        if isinstance(bounds, list):
+            return [int(item) for item in bounds]
+        return None
+
+    def _display_is_primary_for_logging(
+        self,
+        device_status: Optional[Dict[str, Any]] = None,
+    ) -> Optional[bool]:
+        display_info = self.current_display_info or self._extract_display_info_from_device_status()
+        if display_info is not None:
+            return bool(display_info.get('is_primary', False))
+        status = device_status or self._safe_device_status()
+        value = status.get('display_is_primary')
+        return bool(value) if value is not None else None
+
     def set_display_index(self, display_index: int) -> Dict[str, Any]:
         """切换当前运行态目标显示器。"""
+        if not self.device.supports_target_selection():
+            raise ValueError(f'当前设备 {self.device_name} 不支持目标切换')
         target_index = int(display_index)
         if target_index < 0:
             raise ValueError('display_index 不能小于 0')
-        display_info = self._resolve_display_info(target_index)
-        self.display_index = target_index
+        display_info = self._normalize_display_info(self.device.set_target(target_index))
+        self.display_index = int(display_info.get('index', target_index))
+        self.device_config['display_index'] = self.display_index
         self.current_display_info = display_info
         return display_info
 
     def persist_display_index(self) -> str:
         """将当前目标显示器持久化到项目配置。"""
+        if self.device_name != 'local':
+            raise ValueError(f'当前设备 {self.device_name} 不支持持久化显示器配置')
         return config.persist_display_index(self.display_index)
 
     def format_effective_status(self) -> str:
         """格式化当前运行的生效参数。"""
         try:
-            display_info = self.current_display_info or self._resolve_display_info(
-                self.display_index
-            )
+            display_info = self.current_display_info or self._extract_display_info_from_device_status()
         except Exception:
             display_info = None
 
+        device_status = self._safe_device_status()
         lines = [
             '[生效参数]',
             f"  模型: {self.model}",
+            f"  设备: {self.device_name}",
             f"  最大步数: {self.max_steps}",
             f"  思考: {self.thinking_mode} / {self.reasoning_effort}",
             f"  坐标空间: {self.coordinate_space}",
-            f"  目标显示器: {self.display_index}",
         ]
+        if display_info is not None:
+            lines.append(f"  目标显示器: {display_info.get('index', self.display_index)}")
         if display_info is not None:
             lines.append(
                 '  显示器区域: '
                 f"{display_info['width']}x{display_info['height']} @ "
                 f"({display_info['x']}, {display_info['y']})"
             )
+        elif device_status:
+            lines.append(f"  设备状态: {device_status}")
         if self.coordinate_space == 'relative':
             lines.append(f"  坐标量程: {self.coordinate_scale}")
         if self.screenshot_size is not None:
@@ -1320,8 +1409,14 @@ class ComputerUseAgent:
         if timezone_offset:
             timezone_display = f'{timezone_display}, {timezone_offset}'
 
+        device_environment = self._safe_device_environment_info()
+        operating_system = (
+            str(device_environment.get('operating_system') or '').strip()
+            or self._get_operating_system_description()
+        )
+
         runtime_context = {
-            'operating_system': self._get_operating_system_description(),
+            'operating_system': operating_system,
             'timezone': timezone_display,
             'date': current_local_time.strftime('%Y-%m-%d'),
             'weekday': current_local_time.strftime('%A'),
@@ -1330,6 +1425,14 @@ class ComputerUseAgent:
         if location:
             runtime_context['location'] = location
         return runtime_context
+
+    def _safe_device_environment_info(self) -> Dict[str, Any]:
+        """获取设备环境信息；失败时回退为空。"""
+        try:
+            payload = self.device.get_environment_info()
+        except Exception:
+            return {}
+        return dict(payload or {})
 
     def _get_local_timezone_name(self, current_local_time: datetime) -> str:
         """尽量解析稳定的 IANA 时区名，否则退回缩写。"""
@@ -1395,29 +1498,7 @@ class ComputerUseAgent:
         """返回可用的城镇级大致位置；当前默认不可用。"""
         return None
 
-    def _prepare_model_screenshot(self, screenshot: Any) -> Any:
-        """按配置缩放传给模型的截图。"""
-        if self.screenshot_size is None:
-            return screenshot
-
-        return screenshot.resize(
-            (self.screenshot_size, self.screenshot_size),
-            resample=self._get_resize_resample(),
-        )
-
-    def _get_resize_resample(self) -> int:
-        """兼容不同 Pillow 版本的重采样常量。"""
-        try:
-            from PIL import Image as PILImage
-        except ImportError:
-            return 1
-
-        resampling = getattr(PILImage, 'Resampling', None)
-        if resampling is not None:
-            return resampling.LANCZOS
-        return PILImage.LANCZOS
-
-    def _save_debug_screenshot(self, screenshot: Any) -> Optional[str]:
+    def _save_debug_screenshot(self, screenshot: DeviceFrame) -> Optional[str]:
         """在完整上下文日志模式下保存当前模型截图。"""
         if not self.save_debug_screenshots:
             return None
@@ -1498,6 +1579,35 @@ class ComputerUseAgent:
         )
         return f'{action_type}({params})'
 
+    def _build_device_command(
+        self,
+        action: Dict[str, Any],
+        image_width: int,
+        image_height: int,
+        model_image_width: int,
+        model_image_height: int,
+    ) -> DeviceCommand:
+        """构建标准化设备命令。"""
+        base_command = map_action_to_command(action)
+        metadata = dict(base_command.metadata or {})
+        metadata.update(
+            {
+                'image_width': image_width,
+                'image_height': image_height,
+                'model_image_width': model_image_width,
+                'model_image_height': model_image_height,
+                'coordinate_space': self.coordinate_space,
+                'coordinate_scale': self.coordinate_scale,
+                'natural_scroll': self.natural_scroll,
+                'verbose': self.verbose,
+            }
+        )
+        return DeviceCommand(
+            command_type=base_command.command_type,
+            payload=dict(base_command.payload or {}),
+            metadata=metadata,
+        )
+
     def _build_logged_model_response(self, response_obj: Any) -> Dict[str, Any]:
         """提取方舟响应中的调试字段用于日志记录。"""
         choice = self._get_first_choice(response_obj)
@@ -1521,17 +1631,28 @@ class ComputerUseAgent:
         logged_screenshot_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """构建截图历史项，分别服务于模型调用和日志落盘。"""
-        img_buffer = io.BytesIO()
-        screenshot.save(img_buffer, format='PNG')
-        img_buffer.seek(0)
-        base64_image = base64.b64encode(img_buffer.read()).decode('utf-8')
+        if isinstance(screenshot, DeviceFrame):
+            frame = screenshot
+        else:
+            img_buffer = io.BytesIO()
+            screenshot.save(img_buffer, format='PNG')
+            img_buffer.seek(0)
+            frame = DeviceFrame(
+                image_data_url=(
+                    'data:image/png;base64,'
+                    f"{base64.b64encode(img_buffer.read()).decode('utf-8')}"
+                ),
+                width=int(getattr(screenshot, 'size', [0, 0])[0]),
+                height=int(getattr(screenshot, 'size', [0, 0])[1]),
+                metadata={},
+            )
         api_message = {
             'role': 'user',
             'content': [
                 {
                     'type': 'image_url',
                     'image_url': {
-                        'url': f'data:image/png;base64,{base64_image}'
+                        'url': frame_to_data_url(frame)
                     }
                 }
             ],

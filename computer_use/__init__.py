@@ -43,6 +43,15 @@ def __getattr__(name):
             'Skill': Skill,
             'discover_skills': discover_skills,
         }[name]
+    if name in {'DeviceAdapter', 'DeviceFrame', 'DeviceCommand', 'create_device_adapter'}:
+        from .devices import DeviceAdapter, DeviceFrame, DeviceCommand, create_device_adapter
+
+        return {
+            'DeviceAdapter': DeviceAdapter,
+            'DeviceFrame': DeviceFrame,
+            'DeviceCommand': DeviceCommand,
+            'create_device_adapter': create_device_adapter,
+        }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
@@ -68,4 +77,10 @@ __all__ = [
     # 技能系统
     'Skill',
     'discover_skills',
+
+    # 设备插件
+    'DeviceAdapter',
+    'DeviceFrame',
+    'DeviceCommand',
+    'create_device_adapter',
 ]

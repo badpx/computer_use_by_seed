@@ -106,6 +106,9 @@ python -m computer_use "打开浏览器"
 | 思考档位 | `REASONING_EFFORT` | `medium` | 方舟思考档位，可选 `minimal` / `low` / `medium` / `high` |
 | 坐标空间 | `COORDINATE_SPACE` | `relative` | 坐标空间，可选 `relative` / `pixel` |
 | 坐标量程 | `COORDINATE_SCALE` | `1000` | `relative` 坐标的量程，例如 `1` / `100` / `1000` |
+| 设备插件 | `DEVICE_NAME` | `local` | 设备适配器名称，默认使用内置本地真机插件 |
+| 设备配置 | `DEVICE_CONFIG_JSON` | - | 设备插件私有 JSON 配置，原样透传给插件 |
+| 设备目录 | `DEVICES_DIR` | `./devices` | 外部设备插件目录 |
 | 目标显示器 | `DISPLAY_INDEX` | `0` | 截图和动作执行所使用的显示器编号，`0` 表示主显示器 |
 | 模型截图尺寸 | `SCREENSHOT_SIZE` | - | 传给模型前的截图宽高，仅支持相同宽高值，例如 `1024` 表示缩放为 `1024x1024` |
 | 上下文截图窗口 | `MAX_CONTEXT_SCREENSHOTS` | `5` | 多轮上下文中最多保留的截图数量，包含当前轮 |
@@ -129,6 +132,9 @@ THINKING_MODE=auto
 REASONING_EFFORT=medium
 COORDINATE_SPACE=relative
 COORDINATE_SCALE=1000
+DEVICE_NAME=local
+DEVICE_CONFIG_JSON=
+DEVICES_DIR=./devices
 DISPLAY_INDEX=0
 SCREENSHOT_SIZE=
 MAX_CONTEXT_SCREENSHOTS=5
@@ -150,6 +156,26 @@ ARK_API_KEY=your_api_key_here
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
 ARK_MODEL=ark-code-latest
 ```
+
+### 设备适配器插件
+
+当前 Agent 已经把“截图 + 设备输入”抽象为统一设备接口：
+
+- 默认内置 `local` 设备插件，继续操作本地真机
+- 可以通过实现新的设备插件，对接远程桌面、sandbox 或其他云端机器
+- 插件通过目录扫描发现，内置插件在 `computer_use/devices/plugins/`，外部插件目录由 `DEVICES_DIR` 指定
+- 设备插件私有配置通过 `DEVICE_CONFIG_JSON` 或 `--device-config-json` 以 JSON 对象传入
+- 插件私有能力和接入方式建议写在各自目录下的 `README.md` 中，避免顶层文档耦合内部插件细节
+
+第一版设备插件要求返回结构化截图帧，而不是直接返回本地 `PIL.Image`：
+
+- `image_base64`
+- `mime_type`
+- `width`
+- `height`
+- `metadata`
+
+当前核心层已支持 `image/png` 和 `image/jpeg`，并默认保留插件返回的原始格式。
 
 ### 历史上下文组织
 
@@ -173,7 +199,7 @@ ARK_MODEL=ark-code-latest
 
 如果设置了 `SCREENSHOT_SIZE` 或 `--screenshot-size`，工具会先把屏幕截图强制缩放为 `NxN` 再传给模型。目前仅支持宽高相同的正方形尺寸。启用后，`pixel` 坐标会按“模型图尺寸 -> 真实屏幕尺寸”自动换算，避免点击偏移。
 
-如果设置了 `DISPLAY_INDEX` 或 `--display-index`，工具会只截取该显示器的画面，并将模型输出的局部坐标自动换算到虚拟桌面绝对坐标后再执行点击、拖拽和滚动。交互模式下还可以通过 `/display <index>` 运行时切换目标显示器，成功后会同步写回项目 `.env`。
+如果当前设备插件支持目标切换，并且设置了 `DISPLAY_INDEX` 或 `--display-index`，工具会只截取该目标的画面，并将模型输出的局部坐标自动换算到设备执行所需的坐标系后再执行点击、拖拽和滚动。内置 `local` 设备插件会把它解释为显示器编号；交互模式下还可以通过 `/display <index>` 运行时切换目标显示器。
 
 交互模式下：
 
@@ -207,6 +233,9 @@ python -m computer_use [指令] [选项]
 | `--reasoning-effort <level>` | `-r` | 设置方舟思考档位，取值 `minimal` / `low` / `medium` / `high` |
 | `--coordinate-space <space>` | - | 设置坐标空间，取值 `relative` / `pixel` |
 | `--coordinate-scale <value>` | - | 设置 `relative` 坐标量程，例如 `1` / `100` / `1000` |
+| `--device <name>` | - | 设置设备插件名称，例如 `local` |
+| `--device-config-json <json>` | - | 设置设备插件私有 JSON 配置 |
+| `--devices-dir <path>` | - | 设置外部设备插件目录 |
 | `--display-index <index>` | - | 设置目标显示器编号，`0` 表示主显示器 |
 | `--screenshot-size <value>` | - | 设置传给模型的截图宽高，仅支持正方形，例如 `1024` 表示 `1024x1024` |
 | `--max-context-screenshots <count>` | - | 设置多轮上下文中保留的截图数量，包含当前轮 |
@@ -233,6 +262,12 @@ python -m computer_use "打开微信" --model doubao-seed-1-6-vision-250815
 
 # 指定第 2 台显示器作为目标屏幕
 python -m computer_use "打开微信" --display-index 1
+
+# 指定设备插件
+python -m computer_use "打开浏览器" --device local
+
+# 指定外部设备插件及其 JSON 配置
+python -m computer_use "打开浏览器" --device remote-sandbox --device-config-json '{"sandbox_id":"sbx-1"}'
 
 # 指定最大步数
 python -m computer_use "搜索 Python 教程" --max-steps 10

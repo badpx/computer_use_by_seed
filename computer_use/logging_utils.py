@@ -4,6 +4,7 @@
 """
 
 import json
+import base64
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -39,6 +40,9 @@ class ContextLogger:
         display_index: Optional[int] = None,
         display_bounds: Optional[list[int]] = None,
         display_is_primary: Optional[bool] = None,
+        device_name: Optional[str] = None,
+        device_status: Optional[Dict[str, Any]] = None,
+        device_target: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         """开始一个新任务并创建日志文件。"""
         if not self.enabled:
@@ -65,6 +69,9 @@ class ContextLogger:
             display_index=display_index,
             display_bounds=display_bounds,
             display_is_primary=display_is_primary,
+            device_name=device_name,
+            device_status=device_status,
+            device_target=device_target,
         )
 
         return self.task_id
@@ -75,9 +82,15 @@ class ContextLogger:
             return None
 
         self.screenshot_dir.mkdir(parents=True, exist_ok=True)
-        filename = f'{self.task_id}_step_{step:03d}.png'
+        extension = self._resolve_screenshot_extension(screenshot)
+        filename = f'{self.task_id}_step_{step:03d}.{extension}'
         screenshot_path = self.screenshot_dir / filename
-        screenshot.save(screenshot_path)
+        if hasattr(screenshot, 'image_data_url'):
+            screenshot_path.write_bytes(
+                base64.b64decode(self._extract_base64_payload(str(screenshot.image_data_url)))
+            )
+        else:
+            screenshot.save(screenshot_path)
         return self.to_relative_path(screenshot_path)
 
     def to_relative_path(self, path: Path) -> str:
@@ -131,3 +144,25 @@ class ContextLogger:
         if self.log_path is None:
             return None
         return str(self.log_path)
+
+    def _resolve_screenshot_extension(self, screenshot: Any) -> str:
+        mime_type = self._extract_mime_type(screenshot)
+        if mime_type == 'image/jpeg':
+            return 'jpg'
+        return 'png'
+
+    def _extract_mime_type(self, screenshot: Any) -> Optional[str]:
+        image_data_url = getattr(screenshot, 'image_data_url', None)
+        if image_data_url:
+            prefix = 'data:'
+            marker = ';base64,'
+            payload = str(image_data_url).strip()
+            if payload.startswith(prefix) and marker in payload:
+                return payload[len(prefix):].split(marker, 1)[0].strip().lower()
+        return getattr(screenshot, 'mime_type', None)
+
+    def _extract_base64_payload(self, image_data_url: str) -> str:
+        marker = ';base64,'
+        if marker in image_data_url:
+            return image_data_url.split(marker, 1)[1].strip()
+        return image_data_url.strip()

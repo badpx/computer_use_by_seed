@@ -1,0 +1,5 @@
+{
+  "name": "local",
+  "description": "Operate the local machine using the existing screenshot and pyautogui stack.",
+  "entrypoint": "plugin:create_adapter"
+}

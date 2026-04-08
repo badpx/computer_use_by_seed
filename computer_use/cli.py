@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import importlib
+import json
 import os
 import sys
 import threading
@@ -16,6 +17,17 @@ from .config import config
 DEFAULT_HISTORY_FILE = Path.home() / '.computer_use_history'
 CONTEXT_WINDOW_BYTES = 256 * 1024
 TOKEN_ESTIMATE_BYTES = 4
+
+
+def _parse_device_config_json(raw_json: str) -> Dict[str, Any]:
+    """解析设备插件 JSON 配置。"""
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'设备配置 JSON 非法: {exc}') from exc
+    if not isinstance(payload, dict):
+        raise ValueError('设备配置 JSON 必须是对象')
+    return payload
 
 
 class InteractiveStatusBar:
@@ -502,10 +514,13 @@ def print_config_info(
     log_full_messages: bool = False,
     screenshot_size: Optional[int] = None,
     display_index: Optional[int] = None,
+    device_name: Optional[str] = None,
 ):
     """打印调试用配置信息。"""
     print("[配置信息]")
     print(f"  API地址: {config.base_url}")
+    effective_device_name = config.device_name if device_name is None else device_name
+    print(f"  设备: {effective_device_name}")
     effective_display_index = (
         config.display_index if display_index is None else display_index
     )
@@ -533,6 +548,9 @@ def interactive_mode(
     screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
     display_index: Optional[int] = None,
+    device_name: Optional[str] = None,
+    device_config: Optional[Dict[str, Any]] = None,
+    devices_dir: Optional[str] = None,
     include_execution_feedback: Optional[bool] = None,
     log_full_messages: bool = False,
     natural_scroll: Optional[bool] = None,
@@ -564,6 +582,7 @@ def interactive_mode(
             log_full_messages=log_full_messages,
             screenshot_size=screenshot_size,
             display_index=display_index,
+            device_name=device_name,
         )
     
     print("[交互模式]")
@@ -589,6 +608,9 @@ def interactive_mode(
             screenshot_size=screenshot_size,
             max_context_screenshots=max_context_screenshots,
             display_index=display_index,
+            device_name=device_name,
+            device_config=device_config,
+            devices_dir=devices_dir,
             include_execution_feedback=include_execution_feedback,
             log_full_messages=log_full_messages,
             natural_scroll=natural_scroll,
@@ -696,6 +718,9 @@ def single_task_mode(
     screenshot_size: Optional[int] = None,
     max_context_screenshots: Optional[int] = None,
     display_index: Optional[int] = None,
+    device_name: Optional[str] = None,
+    device_config: Optional[Dict[str, Any]] = None,
+    devices_dir: Optional[str] = None,
     include_execution_feedback: Optional[bool] = None,
     log_full_messages: bool = False,
     natural_scroll: Optional[bool] = None,
@@ -732,6 +757,7 @@ def single_task_mode(
                 log_full_messages=log_full_messages,
                 screenshot_size=screenshot_size,
                 display_index=display_index,
+                device_name=device_name,
             )
         print(f"[任务] {instruction}\n")
 
@@ -749,6 +775,9 @@ def single_task_mode(
         screenshot_size=screenshot_size,
         max_context_screenshots=max_context_screenshots,
         display_index=display_index,
+        device_name=device_name,
+        device_config=device_config,
+        devices_dir=devices_dir,
         include_execution_feedback=include_execution_feedback,
         log_full_messages=log_full_messages,
         natural_scroll=natural_scroll,
@@ -863,6 +892,21 @@ def main():
         help='设置目标显示器编号，0 表示主显示器（默认从配置读取）'
     )
 
+    parser.add_argument(
+        '--device',
+        help='设置设备插件名称（默认从配置读取）'
+    )
+
+    parser.add_argument(
+        '--device-config-json',
+        help='设置设备插件私有 JSON 配置（默认从配置读取）'
+    )
+
+    parser.add_argument(
+        '--devices-dir',
+        help='设置外部设备插件目录（默认从配置读取）'
+    )
+
     execution_feedback_group = parser.add_mutually_exclusive_group()
     execution_feedback_group.add_argument(
         '--include-execution-feedback',
@@ -937,6 +981,9 @@ def main():
     screenshot_size = None
     max_context_screenshots = None
     display_index = None
+    device_name = None
+    device_config = None
+    devices_dir = None
     include_execution_feedback = None
     log_full_messages = args.verbose
     if args.natural_scroll:
@@ -958,6 +1005,12 @@ def main():
         max_context_screenshots = args.max_context_screenshots
     if args.display_index is not None:
         display_index = args.display_index
+    if args.device:
+        device_name = args.device
+    if args.device_config_json:
+        device_config = _parse_device_config_json(args.device_config_json)
+    if args.devices_dir:
+        devices_dir = args.devices_dir
     if args.include_execution_feedback:
         include_execution_feedback = True
     elif args.no_execution_feedback:
@@ -984,6 +1037,9 @@ def main():
                 screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
                 display_index=display_index,
+                device_name=device_name,
+                device_config=device_config,
+                devices_dir=devices_dir,
                 include_execution_feedback=include_execution_feedback,
                 log_full_messages=log_full_messages,
                 natural_scroll=natural_scroll,
@@ -1006,6 +1062,9 @@ def main():
                 screenshot_size=screenshot_size,
                 max_context_screenshots=max_context_screenshots,
                 display_index=display_index,
+                device_name=device_name,
+                device_config=device_config,
+                devices_dir=devices_dir,
                 include_execution_feedback=include_execution_feedback,
                 log_full_messages=log_full_messages,
                 natural_scroll=natural_scroll,

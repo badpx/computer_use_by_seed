@@ -63,3 +63,7 @@ GUI-Demo/
 
 # Worktrees
 .worktrees/
+
+# Private plugin
+computer_use/devices/plugins/sandbox/
+tests/test_sandbox_device.py

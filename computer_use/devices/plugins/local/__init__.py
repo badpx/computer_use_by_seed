@@ -1,0 +1,1 @@
+"""Local machine device plugin."""

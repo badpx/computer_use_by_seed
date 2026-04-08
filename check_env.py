@@ -172,6 +172,7 @@ def main():
         print("示例命令:")
         print("  python -m computer_use              # 交互模式")
         print("  python -m computer_use '打开浏览器'  # 单次任务")
+        print("  python -m computer_use '打开浏览器' --device local")
         return 0
     else:
         print(f"✗ 部分检查未通过 ({passed}/{total})")

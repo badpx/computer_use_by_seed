@@ -6,6 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
+import base64
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -90,6 +91,8 @@ class FakeArkClient:
 class AgentContextTests(unittest.TestCase):
     def setUp(self):
         os.environ['ARK_API_KEY'] = 'test-key'
+        os.environ['DEVICE_NAME'] = 'local'
+        os.environ.pop('DEVICE_CONFIG_JSON', None)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.responses = []
         self.calls = []
@@ -109,29 +112,18 @@ class AgentContextTests(unittest.TestCase):
     def _load_agent_module(self):
         screenshot_stub = types.ModuleType('computer_use.screenshot')
         screenshot_stub.screenshot_manager = types.SimpleNamespace()
-        screenshot_stub.capture_screenshot = lambda *args, **kwargs: (
-            FakeScreenshot(),
-            None,
-        )
-        screenshot_stub.resolve_display = lambda display_index=None: {
-            'index': 0 if display_index is None else int(display_index),
-            'x': 0,
-            'y': 0,
-            'width': 1280,
-            'height': 720,
-            'is_primary': (display_index in (None, 0)),
-        }
+        screenshot_stub.capture_screenshot = self._fake_capture
+        screenshot_stub.resolve_display = self._fake_resolve_display
+        screenshot_stub.list_displays = lambda: [
+            types.SimpleNamespace(to_dict=lambda payload=display: dict(payload))
+            for display in (
+                self._fake_resolve_display(0),
+                self._fake_resolve_display(1),
+            )
+        ]
 
         action_executor_stub = types.ModuleType('computer_use.action_executor')
-
-        class PlaceholderExecutor:
-            def __init__(self, *args, **kwargs):
-                pass
-
-            def execute(self, action):
-                return 'placeholder'
-
-        action_executor_stub.ActionExecutor = PlaceholderExecutor
+        action_executor_stub.ActionExecutor = self._build_executor()
 
         ark_stub = types.ModuleType('volcenginesdkarkruntime')
 
@@ -155,9 +147,7 @@ class AgentContextTests(unittest.TestCase):
             self.calls,
         )
         agent_module.time.sleep = lambda _: None
-        agent_module.capture_screenshot = self._fake_capture
-        agent_module.resolve_display = self._fake_resolve_display
-        agent_module.ActionExecutor = self._build_executor()
+        agent_module.prepare_model_frame = self._fake_prepare_model_frame
         return agent_module
 
     def _fake_resolve_display(self, display_index=None):
@@ -195,11 +185,26 @@ class AgentContextTests(unittest.TestCase):
 
         return FakeExecutor
 
+    def _fake_prepare_model_frame(self, frame, screenshot_size=None):
+        if screenshot_size is None or int(screenshot_size) <= 0:
+            return frame
+        payload = f'{int(screenshot_size)}x{int(screenshot_size)}'.encode('utf-8')
+        return self.agent_module.DeviceFrame(
+            image_data_url=(
+                'data:image/png;base64,'
+                f"{base64.b64encode(payload).decode('utf-8')}"
+            ),
+            width=int(screenshot_size),
+            height=int(screenshot_size),
+            metadata=dict(frame.metadata or {}),
+        )
+
     def _make_agent(self, **kwargs):
         return self.agent_module.ComputerUseAgent(
             model='fake-model',
             max_steps=kwargs.pop('max_steps', 5),
             screenshot_size=kwargs.pop('screenshot_size', 0),
+            device_name=kwargs.pop('device_name', 'local'),
             verbose=kwargs.pop('verbose', False),
             **kwargs,
         )
@@ -596,6 +601,26 @@ class AgentContextTests(unittest.TestCase):
         prompt = agent._build_system_prompt()
 
         self.assertIn('- Approximate location: Shanghai', prompt)
+
+    def test_runtime_context_prefers_device_operating_system_over_host(self):
+        agent = self._make_agent(verbose=False)
+        agent.device.get_environment_info = lambda: {
+            'operating_system': 'Windows 11',
+        }
+        agent._get_operating_system_description = lambda: 'macOS 15.4'
+
+        runtime_context = agent._get_runtime_context()
+
+        self.assertEqual(runtime_context['operating_system'], 'Windows 11')
+
+    def test_runtime_context_falls_back_to_host_operating_system_when_device_omits_it(self):
+        agent = self._make_agent(verbose=False)
+        agent.device.get_environment_info = lambda: {}
+        agent._get_operating_system_description = lambda: 'macOS 15.4'
+
+        runtime_context = agent._get_runtime_context()
+
+        self.assertEqual(runtime_context['operating_system'], 'macOS 15.4')
 
     def test_get_operating_system_description_formats_macos_versions(self):
         agent = self._make_agent(verbose=False)
@@ -1069,7 +1094,8 @@ class AgentContextTests(unittest.TestCase):
             "Thought: done\nAction: finished(content='ok')",
         ]
 
-        original_resolve_display = self.agent_module.resolve_display
+        screenshot_module = sys.modules['computer_use.screenshot']
+        original_resolve_display = screenshot_module.resolve_display
 
         def fake_resolve_display(display_index=None):
             index = 0 if display_index is None else int(display_index)
@@ -1077,14 +1103,14 @@ class AgentContextTests(unittest.TestCase):
                 raise ValueError('显示器索引 2 超出范围，当前仅检测到 2 台显示器')
             return self._fake_resolve_display(index)
 
-        self.agent_module.resolve_display = fake_resolve_display
+        screenshot_module.resolve_display = fake_resolve_display
         output = io.StringIO()
         try:
             with redirect_stdout(output):
                 agent = self._make_agent(display_index=2, verbose=True)
                 result = agent.run('Fallback to the primary display')
         finally:
-            self.agent_module.resolve_display = original_resolve_display
+            screenshot_module.resolve_display = original_resolve_display
 
         self.assertTrue(result['success'])
         self.assertEqual(agent.display_index, 0)

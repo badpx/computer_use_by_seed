@@ -478,6 +478,54 @@ class CliPromptTests(unittest.TestCase):
         self.assertTrue(fake_agent_instances[0].kwargs['print_init_status'])
         self.assertFalse(fake_agent_instances[0].kwargs['persistent_session'])
 
+    def test_single_task_mode_passes_device_options_to_agent(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                return {
+                    'success': True,
+                    'steps': [],
+                    'final_response': instruction,
+                }
+
+            def format_effective_status(self):
+                return '[生效参数]\n  模型: fake-model'
+
+            def clear_session_context(self):
+                pass
+
+            def compact_session_context(self, manual=False):
+                return True
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+
+        with mock.patch.object(self.cli, 'ensure_supported_python'):
+            self.cli.single_task_mode(
+                instruction='测试设备参数',
+                device_name='remote-sandbox',
+                device_config={'sandbox_id': 'sbx-1'},
+                devices_dir='/tmp/custom-devices',
+                verbose=False,
+            )
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        self.assertEqual(fake_agent_instances[0].kwargs['device_name'], 'remote-sandbox')
+        self.assertEqual(
+            fake_agent_instances[0].kwargs['device_config'],
+            {'sandbox_id': 'sbx-1'},
+        )
+        self.assertEqual(
+            fake_agent_instances[0].kwargs['devices_dir'],
+            '/tmp/custom-devices',
+        )
+
     def test_single_task_mode_prints_config_info_only_in_debug_mode(self):
         fake_agent_module = types.ModuleType('computer_use.agent')
 

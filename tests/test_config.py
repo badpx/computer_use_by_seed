@@ -29,6 +29,30 @@ class ConfigDefaultsTests(unittest.TestCase):
             if original_env is not None:
                 os.environ['DISPLAY_INDEX'] = original_env
 
+    def test_device_name_defaults_to_local(self):
+        original_env = os.environ.pop('DEVICE_NAME', None)
+        original_load_from_file = Config._load_from_file
+        try:
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.device_name, 'local')
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is not None:
+                os.environ['DEVICE_NAME'] = original_env
+
+    def test_device_config_json_defaults_to_empty_dict(self):
+        original_env = os.environ.pop('DEVICE_CONFIG_JSON', None)
+        original_load_from_file = Config._load_from_file
+        try:
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.device_config, {})
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is not None:
+                os.environ['DEVICE_CONFIG_JSON'] = original_env
+
 
 if __name__ == '__main__':
     unittest.main()
