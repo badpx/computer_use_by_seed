@@ -372,6 +372,14 @@ class LocalDeviceAdapterTests(unittest.TestCase):
         self.assertEqual((frame.width, frame.height), (1, 1))
 
 class DeviceCommandMapperTests(unittest.TestCase):
+    def test_phone_action_mappings_are_registered(self):
+        from computer_use.devices import command_mapper
+
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['long_press'], 'long_press')
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['open_app'], 'open_app')
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['press_home'], 'press_home')
+        self.assertEqual(command_mapper.ACTION_TYPE_TO_COMMAND_TYPE['press_back'], 'press_back')
+
     def test_map_click_action_to_device_command(self):
         from computer_use.devices.command_mapper import map_action_to_command
 
@@ -384,6 +392,51 @@ class DeviceCommandMapperTests(unittest.TestCase):
 
         self.assertEqual(command.command_type, 'click')
         self.assertEqual(command.payload['point'], [120, 55])
+
+    def test_map_action_to_command_maps_long_press(self):
+        from computer_use.devices.command_mapper import map_action_to_command
+
+        command = map_action_to_command(
+            {
+                'action_type': 'long_press',
+                'action_inputs': {'point': [100, 200]},
+            }
+        )
+
+        self.assertEqual(command.command_type, 'long_press')
+        self.assertEqual(command.payload['point'], [100, 200])
+
+    def test_map_action_to_command_maps_open_app(self):
+        from computer_use.devices.command_mapper import map_action_to_command
+
+        command = map_action_to_command(
+            {
+                'action_type': 'open_app',
+                'action_inputs': {'app_name': 'com.demo.app'},
+            }
+        )
+
+        self.assertEqual(command.command_type, 'open_app')
+        self.assertEqual(command.payload['app_name'], 'com.demo.app')
+
+    def test_map_action_to_command_maps_press_home_and_back(self):
+        from computer_use.devices.command_mapper import map_action_to_command
+
+        home = map_action_to_command(
+            {
+                'action_type': 'press_home',
+                'action_inputs': {},
+            }
+        )
+        back = map_action_to_command(
+            {
+                'action_type': 'press_back',
+                'action_inputs': {},
+            }
+        )
+
+        self.assertEqual(home.command_type, 'press_home')
+        self.assertEqual(back.command_type, 'press_back')
 
     def test_normalize_relative_click_coordinates_to_frame_pixels(self):
         from computer_use.devices.command_mapper import map_action_to_command
