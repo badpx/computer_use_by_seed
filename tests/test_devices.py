@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import sys
@@ -26,6 +27,53 @@ JPEG_1X1_BASE64 = (
 
 
 class DeviceHelpersTests(unittest.TestCase):
+    def test_detect_image_size_reads_png_metadata(self):
+        from computer_use.devices.helpers import detect_image_size
+
+        width, height = detect_image_size(base64.b64decode(PNG_1X1_BASE64))
+
+        self.assertEqual((width, height), (1, 1))
+
+    def test_detect_image_size_reads_jpeg_metadata(self):
+        from computer_use.devices.helpers import detect_image_size
+
+        width, height = detect_image_size(base64.b64decode(JPEG_1X1_BASE64))
+
+        self.assertEqual((width, height), (1, 1))
+
+    def test_detect_image_size_falls_back_to_pillow_when_metadata_parse_fails(self):
+        from computer_use.devices import helpers as helpers_module
+
+        with mock.patch.object(
+            helpers_module,
+            '_detect_png_size',
+            return_value=None,
+        ), mock.patch.object(
+            helpers_module,
+            '_detect_jpeg_size',
+            return_value=None,
+        ), mock.patch.object(
+            helpers_module,
+            '_detect_image_size_with_pillow',
+            return_value=(23, 45),
+        ):
+            width, height = helpers_module.detect_image_size(b'not-real-image')
+
+        self.assertEqual((width, height), (23, 45))
+
+    def test_detect_frame_size_reads_dimensions_from_frame_data_url(self):
+        from computer_use.devices.base import DeviceFrame
+        from computer_use.devices.helpers import detect_frame_size
+
+        frame = DeviceFrame(
+            image_data_url=f'data:image/png;base64,{PNG_1X1_BASE64}',
+            width=999,
+            height=999,
+            metadata={},
+        )
+
+        self.assertEqual(detect_frame_size(frame), (1, 1))
+
     def test_prepare_model_frame_keeps_original_frame_without_resize(self):
         from computer_use.devices.base import DeviceFrame
         from computer_use.devices.helpers import prepare_model_frame

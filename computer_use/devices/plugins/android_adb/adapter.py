@@ -7,6 +7,7 @@ import subprocess
 from typing import Any, Dict, List, Optional
 
 from ...base import DeviceAdapter, DeviceCommand, DeviceFrame
+from ...helpers import detect_image_size
 
 
 _ADB_BINARY = 'adb'
@@ -35,7 +36,7 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
             action_label='capture screenshot',
         )
         image_bytes, prefix_stripped = self._extract_png_bytes(screenshot_result.stdout)
-        width, height = self._read_png_size(image_bytes)
+        width, height = detect_image_size(image_bytes, mime_type='image/png')
         return DeviceFrame(
             image_data_url=(
                 'data:image/png;base64,'
@@ -235,15 +236,6 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
                 f'android_adb 截图输出中未找到 PNG 签名，输出预览: {preview}'
             )
         return bytes(stdout[png_offset:]), png_offset > 0
-
-    def _read_png_size(self, png_bytes: bytes) -> tuple[int, int]:
-        if len(png_bytes) < 24 or not png_bytes.startswith(_PNG_SIGNATURE):
-            raise RuntimeError('android_adb 截图不是有效的 PNG 数据')
-        width = int.from_bytes(png_bytes[16:20], 'big')
-        height = int.from_bytes(png_bytes[20:24], 'big')
-        if width <= 0 or height <= 0:
-            raise RuntimeError('android_adb 截图 PNG 尺寸无效')
-        return width, height
 
     def _require_point(
         self,

@@ -52,6 +52,44 @@ def frame_to_bytes(frame: DeviceFrame) -> bytes:
     return base64.b64decode(extract_frame_base64(frame).encode('utf-8'))
 
 
+def detect_frame_size(frame: DeviceFrame) -> tuple[int, int]:
+    return detect_image_size(
+        frame_to_bytes(frame),
+        mime_type=extract_frame_mime_type(frame),
+    )
+
+
+def detect_image_size(
+    image_bytes: bytes,
+    mime_type: Optional[str] = None,
+) -> tuple[int, int]:
+    normalized_mime = None
+    if mime_type:
+        try:
+            normalized_mime = validate_frame_mime_type(mime_type)
+        except ValueError:
+            normalized_mime = None
+
+    detectors = []
+    if normalized_mime == 'image/png':
+        detectors = [_detect_png_size, _detect_jpeg_size]
+    elif normalized_mime == 'image/jpeg':
+        detectors = [_detect_jpeg_size, _detect_png_size]
+    else:
+        detectors = [_detect_png_size, _detect_jpeg_size]
+
+    for detector in detectors:
+        size = detector(image_bytes)
+        if size is not None:
+            return size
+
+    size = _detect_image_size_with_pillow(image_bytes)
+    if size is not None:
+        return size
+
+    raise RuntimeError('无法从图片数据中解析宽高')
+
+
 def load_frame_image(frame: DeviceFrame):
     try:
         from PIL import Image
@@ -92,6 +130,88 @@ def _resize_frame(frame: DeviceFrame, screenshot_size: int) -> DeviceFrame:
         height=screenshot_size,
         metadata=metadata,
     )
+
+
+def _detect_png_size(image_bytes: bytes) -> Optional[tuple[int, int]]:
+    if len(image_bytes) < 24:
+        return None
+    signature = b'\x89PNG\r\n\x1a\n'
+    if not image_bytes.startswith(signature):
+        return None
+    width = int.from_bytes(image_bytes[16:20], 'big')
+    height = int.from_bytes(image_bytes[20:24], 'big')
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _detect_jpeg_size(image_bytes: bytes) -> Optional[tuple[int, int]]:
+    if len(image_bytes) < 4 or not image_bytes.startswith(b'\xff\xd8'):
+        return None
+
+    offset = 2
+    size = len(image_bytes)
+    sof_markers = {
+        0xC0, 0xC1, 0xC2, 0xC3,
+        0xC5, 0xC6, 0xC7,
+        0xC9, 0xCA, 0xCB,
+        0xCD, 0xCE, 0xCF,
+    }
+
+    while offset + 1 < size:
+        marker_offset = image_bytes.find(b'\xff', offset)
+        if marker_offset < 0 or marker_offset + 1 >= size:
+            return None
+
+        marker_index = marker_offset + 1
+        while marker_index < size and image_bytes[marker_index] == 0xFF:
+            marker_index += 1
+        if marker_index >= size:
+            return None
+
+        marker = image_bytes[marker_index]
+
+        if marker == 0xDA:
+            break
+        if marker in {0xD8, 0xD9}:
+            offset = marker_index + 1
+            continue
+
+        if marker in sof_markers:
+            if marker_offset + 9 >= size:
+                return None
+            height = int.from_bytes(
+                image_bytes[marker_offset + 5:marker_offset + 7],
+                'big',
+            )
+            width = int.from_bytes(
+                image_bytes[marker_offset + 7:marker_offset + 9],
+                'big',
+            )
+            if width <= 0 or height <= 0:
+                return None
+            return width, height
+
+        offset = marker_index + 1
+
+    return None
+
+
+def _detect_image_size_with_pillow(image_bytes: bytes) -> Optional[tuple[int, int]]:
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            width, height = image.size
+    except Exception:
+        return None
+
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
 
 
 def _split_data_url(image_data_url: str) -> tuple[str, str]:
