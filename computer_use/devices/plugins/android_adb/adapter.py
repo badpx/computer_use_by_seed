@@ -111,7 +111,7 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
             return self._execute_type_text(payload)
 
         if command_type == 'scroll':
-            point = self._require_point(payload, 'point', default=[0, 0])
+            point = self._require_point(payload, 'point')
             axis_arg = self._resolve_scroll_axis(payload)
             self._run_adb(
                 [
@@ -250,7 +250,6 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
         payload: Dict[str, Any],
         key: str,
         fallback_keys: Optional[List[str]] = None,
-        default: Optional[List[int]] = None,
     ) -> List[int]:
         value = payload.get(key)
         if value is None:
@@ -258,32 +257,43 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
                 value = payload.get(fallback_key)
                 if value is not None:
                     break
+        if value is None:
+            raise ValueError(f'android_adb 命令缺少坐标: {key}')
         point = self._coerce_point(value)
-        if point is not None:
-            return point
-        if default is not None:
-            return list(default)
-        raise ValueError(f'android_adb 命令缺少坐标: {key}')
+        return point
 
-    def _coerce_point(self, value: Any) -> Optional[List[int]]:
+    def _coerce_point(self, value: Any) -> List[int]:
         if isinstance(value, (list, tuple)) and len(value) == 2:
-            return [int(float(value[0])), int(float(value[1]))]
+            try:
+                return [int(float(value[0])), int(float(value[1]))]
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f'android_adb 坐标格式无效: {value}') from exc
         if isinstance(value, str):
             parts = [part for part in value.replace(',', ' ').split() if part]
             if len(parts) == 2:
-                return [int(float(parts[0])), int(float(parts[1]))]
-        return None
+                try:
+                    return [int(float(parts[0])), int(float(parts[1]))]
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f'android_adb 坐标格式无效: {value}') from exc
+        raise ValueError(f'android_adb 坐标格式无效: {value}')
 
     def _resolve_duration_ms(self, payload: Dict[str, Any], default: int = 800) -> int:
         raw_value = payload.get('duration_ms', payload.get('duration', default))
-        duration_ms = int(float(raw_value))
+        try:
+            duration_ms = int(float(raw_value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'android_adb duration_ms 格式无效: {raw_value}') from exc
         if duration_ms <= 0:
             raise ValueError('android_adb duration_ms 必须大于 0')
         return duration_ms
 
     def _resolve_scroll_axis(self, payload: Dict[str, Any]) -> str:
         direction = str(payload.get('direction', 'down')).strip().lower()
-        steps = int(abs(float(payload.get('steps', 50))))
+        raw_steps = payload.get('steps', 50)
+        try:
+            steps = int(abs(float(raw_steps)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'android_adb scroll steps 格式无效: {raw_steps}') from exc
         if steps <= 0:
             raise ValueError('android_adb scroll steps 必须大于 0')
         if direction == 'down':

@@ -209,6 +209,27 @@ class AndroidAdbDeviceAdapterTests(unittest.TestCase):
             ]
         )
 
+    def test_type_text_escapes_spaces_and_percent(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+        command = DeviceCommand('type_text', {'content': 'hello 50% done'})
+
+        with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.subprocess.run',
+            return_value=self._completed(
+                ['adb', 'shell', 'input', 'text', 'hello%s50%25%sdone']
+            ),
+        ) as run_mock:
+            result = adapter.execute_command(command)
+
+        self.assertEqual(result, 'type_text 执行成功')
+        run_mock.assert_called_once_with(
+            ['adb', 'shell', 'input', 'text', 'hello%s50%25%sdone'],
+            capture_output=True,
+            check=False,
+        )
+
     def test_open_app_maps_to_monkey_launcher(self):
         from computer_use.devices.base import DeviceCommand
 
@@ -246,6 +267,24 @@ class AndroidAdbDeviceAdapterTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def test_scroll_missing_point_raises_clear_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+
+        with self.assertRaisesRegex(ValueError, 'android_adb'):
+            adapter.execute_command(DeviceCommand('scroll', {'direction': 'down', 'steps': 2}))
+
+    def test_scroll_malformed_point_raises_clear_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+
+        with self.assertRaisesRegex(ValueError, 'android_adb 坐标格式无效'):
+            adapter.execute_command(
+                DeviceCommand('scroll', {'point': ['bad', 60], 'direction': 'down', 'steps': 2})
+            )
 
     def test_scroll_maps_to_touchscreen_scroll_axis_argument(self):
         from computer_use.devices.base import DeviceCommand
@@ -290,6 +329,26 @@ class AndroidAdbDeviceAdapterTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def test_long_press_invalid_duration_raises_clear_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+
+        with self.assertRaisesRegex(ValueError, 'android_adb duration_ms 格式无效'):
+            adapter.execute_command(
+                DeviceCommand('long_press', {'point': [12, 34], 'duration_ms': 'fast'})
+            )
+
+    def test_scroll_invalid_steps_raises_clear_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+
+        with self.assertRaisesRegex(ValueError, 'android_adb scroll steps 格式无效'):
+            adapter.execute_command(
+                DeviceCommand('scroll', {'point': [50, 60], 'direction': 'down', 'steps': 'many'})
+            )
 
     def test_press_home_and_back_map_to_keyevents(self):
         from computer_use.devices.base import DeviceCommand
