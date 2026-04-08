@@ -59,8 +59,10 @@ finished(content='xxx') # Use escape characters \\', \\", and \\n in content par
 
 ## Note
 - Use {language} in `Thought` part.
-- Normalize the x and y coordinates of each point and scale them into the interval [0, 1000].
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.
+
+## User Instruction
+{instruction}
 '''
 
 # 技能提示词附加内容，在技能系统启用时追加到系统提示词末尾

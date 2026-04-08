@@ -651,6 +651,128 @@ class AgentContextTests(unittest.TestCase):
         self.assertIn("open_app(app_name='')", prompt)
         self.assertNotIn("hotkey(key='ctrl c')", prompt)
 
+    def test_system_prompt_falls_back_to_computer_prompt_for_unknown_profile(self):
+        class FakeUnknownProfileDevice:
+            def connect(self):
+                return None
+
+            def close(self):
+                return None
+
+            def capture_frame(self):
+                return self_device_frame
+
+            def execute_command(self, command):
+                return 'DONE'
+
+            def get_status(self):
+                return {
+                    'operating_system': 'Windows 11',
+                    'display_index': 0,
+                    'display_bounds': [0, 0, 1, 1],
+                    'display_is_primary': True,
+                }
+
+            def get_environment_info(self):
+                return {'operating_system': 'Windows 11'}
+
+            def get_prompt_profile(self):
+                return 'tablet'
+
+            def supports_target_selection(self):
+                return False
+
+            def list_targets(self):
+                return []
+
+            def set_target(self, target_id):
+                raise NotImplementedError
+
+        self_device_frame = self.agent_module.DeviceFrame(
+            image_data_url=(
+                'data:image/png;base64,'
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8'
+                '/w8AAgMBgJ0XGfQAAAAASUVORK5CYII='
+            ),
+            width=1,
+            height=1,
+            metadata={},
+        )
+
+        agent = self._make_agent(device_adapter=FakeUnknownProfileDevice(), verbose=False)
+        agent._get_runtime_context = lambda: {
+            'timezone': 'Asia/Shanghai (CST), UTC+08:00',
+            'date': '2026-04-06',
+            'weekday': 'Monday',
+            'operating_system': 'Windows 11',
+        }
+
+        prompt = agent._build_system_prompt()
+
+        self.assertIn("hotkey(key='ctrl c')", prompt)
+        self.assertNotIn("press_home()", prompt)
+
+    def test_system_prompt_falls_back_to_computer_prompt_when_profile_lookup_raises(self):
+        class FakeBrokenProfileDevice:
+            def connect(self):
+                return None
+
+            def close(self):
+                return None
+
+            def capture_frame(self):
+                return self_device_frame
+
+            def execute_command(self, command):
+                return 'DONE'
+
+            def get_status(self):
+                return {
+                    'operating_system': 'Windows 11',
+                    'display_index': 0,
+                    'display_bounds': [0, 0, 1, 1],
+                    'display_is_primary': True,
+                }
+
+            def get_environment_info(self):
+                return {'operating_system': 'Windows 11'}
+
+            def get_prompt_profile(self):
+                raise RuntimeError('profile lookup failed')
+
+            def supports_target_selection(self):
+                return False
+
+            def list_targets(self):
+                return []
+
+            def set_target(self, target_id):
+                raise NotImplementedError
+
+        self_device_frame = self.agent_module.DeviceFrame(
+            image_data_url=(
+                'data:image/png;base64,'
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8'
+                '/w8AAgMBgJ0XGfQAAAAASUVORK5CYII='
+            ),
+            width=1,
+            height=1,
+            metadata={},
+        )
+
+        agent = self._make_agent(device_adapter=FakeBrokenProfileDevice(), verbose=False)
+        agent._get_runtime_context = lambda: {
+            'timezone': 'Asia/Shanghai (CST), UTC+08:00',
+            'date': '2026-04-06',
+            'weekday': 'Monday',
+            'operating_system': 'Windows 11',
+        }
+
+        prompt = agent._build_system_prompt()
+
+        self.assertIn("hotkey(key='ctrl c')", prompt)
+        self.assertNotIn("press_home()", prompt)
+
     def test_system_prompt_includes_approximate_location_when_available(self):
         agent = self._make_agent(verbose=False)
         agent._get_runtime_context = lambda: {
