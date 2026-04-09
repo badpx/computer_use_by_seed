@@ -396,6 +396,7 @@ class DeviceFactoryTests(unittest.TestCase):
 
         self.assertEqual(adapter.device_name, 'vnc')
         self.assertEqual(adapter.get_prompt_profile(), 'computer')
+        self.assertEqual(adapter.plugin_config, {'host': '127.0.0.1'})
 
 
 class LocalDeviceAdapterTests(unittest.TestCase):
