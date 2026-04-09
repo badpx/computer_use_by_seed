@@ -84,9 +84,8 @@ class VncDeviceAdapter(DeviceAdapter):
     def capture_frame(self) -> DeviceFrame:
         client = self._require_client()
         try:
-            image = client.captureScreen()
             buffer = io.BytesIO()
-            image.save(buffer, format='PNG')
+            client.captureScreen(buffer, format='PNG')
             image_bytes = buffer.getvalue()
             width, height = detect_image_size(
                 image_bytes, mime_type='image/png'
@@ -118,7 +117,8 @@ class VncDeviceAdapter(DeviceAdapter):
                 content = str(payload.get('content') or '')
                 if not content:
                     raise ValueError('vnc type_text 需要 content')
-                client.keyType(content)
+                for char in content:
+                    client.keyPress(char)
                 return 'type_text 执行成功'
             except ValueError:
                 raise

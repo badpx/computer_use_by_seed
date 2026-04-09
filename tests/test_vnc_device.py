@@ -284,7 +284,7 @@ class VncDeviceAdapterKeyboardCommandTests(unittest.TestCase):
 
         return VncDeviceAdapter(plugin_config)
 
-    def test_type_text_uses_key_type(self):
+    def test_type_text_uses_key_press_for_each_character(self):
         from computer_use.devices.base import DeviceCommand
 
         adapter = self._make_adapter({'host': '127.0.0.1'})
@@ -296,7 +296,10 @@ class VncDeviceAdapterKeyboardCommandTests(unittest.TestCase):
         )
 
         self.assertEqual(result, 'type_text 执行成功')
-        client.keyType.assert_called_once_with('hello world')
+        self.assertEqual(
+            client.method_calls,
+            [unittest.mock.call.keyPress(char) for char in 'hello world'],
+        )
 
     def test_hotkey_presses_and_releases_in_order(self):
         from computer_use.devices.base import DeviceCommand
@@ -417,13 +420,13 @@ class VncDeviceAdapterKeyboardCommandTests(unittest.TestCase):
 
         adapter = self._make_adapter({'host': '127.0.0.1'})
         client = unittest.mock.Mock()
-        client.keyType.side_effect = RuntimeError('boom')
+        client.keyPress.side_effect = RuntimeError('boom')
         adapter._client = client
 
         with self.assertRaisesRegex(RuntimeError, 'vnc type_text 失败: boom'):
             adapter.execute_command(DeviceCommand('type_text', {'content': 'hello'}))
 
-        client.keyType.assert_called_once_with('hello')
+        client.keyPress.assert_called_once_with('h')
 
     def test_hotkey_releases_only_pressed_modifiers_and_preserves_primary_failure(self):
         from computer_use.devices.base import DeviceCommand
@@ -666,11 +669,17 @@ class VncDeviceAdapterCaptureTests(unittest.TestCase):
 
     @patch('computer_use.devices.plugins.vnc.adapter.api')
     def test_capture_frame_returns_png_data_url(self, api_mock):
-        from PIL import Image
-
-        image = Image.new('RGB', (1, 1), color='white')
+        png_bytes = (
+            b'\x89PNG\r\n\x1a\n'
+            b'\x00\x00\x00\rIHDR'
+            b'\x00\x00\x00\x01\x00\x00\x00\x01'
+            b'\x08\x02\x00\x00\x00'
+            b'\x90wS\xde'
+            b'\x00\x00\x00\x0cIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfeA\xe2%\x9b'
+            b'\x00\x00\x00\x00IEND\xaeB`\x82'
+        )
         client = unittest.mock.Mock()
-        client.captureScreen.return_value = image
+        client.captureScreen.side_effect = lambda fp, format=None: fp.write(png_bytes)
         api_mock.connect.return_value = client
         adapter = self._make_adapter(
             {'host': '10.0.0.8', 'port': 5901, 'password': 'secret'}
@@ -690,7 +699,11 @@ class VncDeviceAdapterCaptureTests(unittest.TestCase):
                 'port': 5901,
             },
         )
-        client.captureScreen.assert_called_once_with()
+        client.captureScreen.assert_called_once()
+        capture_args, capture_kwargs = client.captureScreen.call_args
+        self.assertEqual(len(capture_args), 1)
+        self.assertTrue(hasattr(capture_args[0], 'write'))
+        self.assertEqual(capture_kwargs, {'format': 'PNG'})
         api_mock.connect.assert_called_once_with(
             '10.0.0.8::5901', password='secret'
         )
@@ -705,25 +718,21 @@ class VncDeviceAdapterCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'vnc capture screenshot 失败'):
             adapter.capture_frame()
 
-        client.captureScreen.assert_called_once_with()
+        client.captureScreen.assert_called_once()
 
     @patch('computer_use.devices.plugins.vnc.adapter.api')
     def test_capture_frame_wraps_downstream_pipeline_errors(self, api_mock):
-        from PIL import Image
-
-        image = Image.new('RGB', (1, 1), color='white')
         client = unittest.mock.Mock()
-        client.captureScreen.return_value = image
+        client.captureScreen.side_effect = lambda fp, format=None: fp.write(b'not-an-image')
         api_mock.connect.return_value = client
         adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
 
-        with patch.object(image, 'save', side_effect=RuntimeError('save failed')):
-            with self.assertRaisesRegex(
-                RuntimeError, 'vnc capture screenshot 失败: save failed'
-            ):
-                adapter.capture_frame()
+        with self.assertRaisesRegex(
+            RuntimeError, 'vnc capture screenshot 失败'
+        ):
+            adapter.capture_frame()
 
-        client.captureScreen.assert_called_once_with()
+        client.captureScreen.assert_called_once()
 
     @patch('computer_use.devices.plugins.vnc.adapter.api')
     def test_close_swallows_disconnect_failure(self, api_mock):
