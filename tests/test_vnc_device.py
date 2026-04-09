@@ -258,6 +258,110 @@ class VncDeviceAdapterMouseCommandTests(unittest.TestCase):
         )
 
 
+class VncDeviceAdapterKeyboardCommandTests(unittest.TestCase):
+    def _make_adapter(self, plugin_config):
+        from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter
+
+        return VncDeviceAdapter(plugin_config)
+
+    def test_type_text_uses_key_type(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(
+            DeviceCommand('type_text', {'content': 'hello world'})
+        )
+
+        self.assertEqual(result, 'type_text 执行成功')
+        client.keyType.assert_called_once_with('hello world')
+
+    def test_hotkey_presses_and_releases_in_order(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(DeviceCommand('hotkey', {'key': 'ctrl+shift+a'}))
+
+        self.assertEqual(result, 'hotkey 执行成功')
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.keyDown('ctrl'),
+                unittest.mock.call.keyDown('shift'),
+                unittest.mock.call.keyPress('a'),
+                unittest.mock.call.keyUp('shift'),
+                unittest.mock.call.keyUp('ctrl'),
+            ],
+        )
+
+    def test_key_down_and_key_up_forward_single_key(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        down_result = adapter.execute_command(DeviceCommand('key_down', {'key': 'A'}))
+        up_result = adapter.execute_command(DeviceCommand('key_up', {'key': 'A'}))
+
+        self.assertEqual(down_result, 'key_down 执行成功')
+        self.assertEqual(up_result, 'key_up 执行成功')
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.keyDown('a'),
+                unittest.mock.call.keyUp('a'),
+            ],
+        )
+
+    def test_scroll_uses_vnc_wheel_buttons(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(
+            DeviceCommand(
+                'scroll',
+                {'point': [100, 120], 'direction': 'left', 'steps': 2},
+            )
+        )
+
+        self.assertEqual(result, 'scroll 执行成功')
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.mouseMove(100, 120),
+                unittest.mock.call.mousePress(6),
+                unittest.mock.call.mousePress(6),
+            ],
+        )
+
+    def test_wait_sleeps_locally(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        adapter._client = unittest.mock.Mock()
+
+        with patch(
+            'computer_use.devices.plugins.vnc.adapter.time.sleep'
+        ) as sleep_mock, patch.object(
+            adapter,
+            '_require_client',
+            side_effect=AssertionError('should not connect'),
+        ):
+            result = adapter.execute_command(DeviceCommand('wait', {'seconds': 3}))
+
+        self.assertEqual(result, '等待 3 秒')
+        sleep_mock.assert_called_once_with(3.0)
+
+
 class VncDeviceAdapterConnectionTests(unittest.TestCase):
     def _make_adapter(self, plugin_config):
         from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter

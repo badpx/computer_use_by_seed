@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import time
 from typing import Any, Dict
 
 try:
@@ -111,6 +112,19 @@ class VncDeviceAdapter(DeviceAdapter):
         payload = dict(command.payload or {})
         command_type = str(command.command_type or '').strip().lower()
 
+        if command_type == 'type_text':
+            try:
+                client = self._require_client()
+                content = str(payload.get('content') or '')
+                if not content:
+                    raise ValueError('vnc type_text 需要 content')
+                client.keyType(content)
+                return 'type_text 执行成功'
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f'vnc type_text 失败: {exc}') from exc
+
         if command_type == 'click':
             try:
                 client = self._require_client()
@@ -184,7 +198,128 @@ class VncDeviceAdapter(DeviceAdapter):
             except Exception as exc:
                 raise RuntimeError(f'vnc drag 失败: {exc}') from exc
 
+        if command_type == 'hotkey':
+            try:
+                client = self._require_client()
+                keys = self._normalize_keys(payload.get('key'))
+                main_key = keys[-1]
+                modifiers = keys[:-1]
+
+                try:
+                    for key in modifiers:
+                        client.keyDown(key)
+                    client.keyPress(main_key)
+                finally:
+                    release_error = None
+                    for key in reversed(modifiers):
+                        try:
+                            client.keyUp(key)
+                        except Exception as exc:
+                            if release_error is None:
+                                release_error = exc
+                    if release_error is not None:
+                        raise release_error
+
+                return 'hotkey 执行成功'
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f'vnc hotkey 失败: {exc}') from exc
+
+        if command_type == 'key_down':
+            try:
+                client = self._require_client()
+                key = self._require_key(payload)
+                client.keyDown(key)
+                return 'key_down 执行成功'
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f'vnc key_down 失败: {exc}') from exc
+
+        if command_type == 'key_up':
+            try:
+                client = self._require_client()
+                key = self._require_key(payload)
+                client.keyUp(key)
+                return 'key_up 执行成功'
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f'vnc key_up 失败: {exc}') from exc
+
+        if command_type == 'scroll':
+            try:
+                client = self._require_client()
+                point = self._require_point(payload, 'point')
+                direction = str(payload.get('direction') or '').strip().lower()
+                button = self._scroll_button(direction)
+                steps = self._resolve_scroll_steps(payload)
+                client.mouseMove(point[0], point[1])
+                for _ in range(steps):
+                    client.mousePress(button)
+                return 'scroll 执行成功'
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f'vnc scroll 失败: {exc}') from exc
+
+        if command_type == 'wait':
+            try:
+                seconds = self._resolve_wait_seconds(payload)
+                time.sleep(seconds)
+                seconds_text = int(seconds) if seconds.is_integer() else seconds
+                return f'等待 {seconds_text} 秒'
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f'vnc wait 失败: {exc}') from exc
+
         raise ValueError(f'vnc 不支持命令类型: {command_type}')
+
+    @staticmethod
+    def _normalize_keys(raw_value):
+        value = '' if raw_value is None else str(raw_value)
+        normalized = value.replace('+', ' ').strip().lower()
+        keys = [part for part in normalized.split() if part]
+        if not keys:
+            raise ValueError('vnc hotkey 需要 key')
+        return keys
+
+    @staticmethod
+    def _require_key(payload):
+        try:
+            raw_value = payload['key']
+        except KeyError as exc:
+            raise ValueError('vnc key event 需要 key') from exc
+        key = str(raw_value).strip().lower()
+        if not key:
+            raise ValueError('vnc key event 需要 key')
+        return key
+
+    @staticmethod
+    def _scroll_button(direction):
+        mapping = {'up': 4, 'down': 5, 'left': 6, 'right': 7}
+        if direction in mapping:
+            return mapping[direction]
+        raise ValueError(f'vnc 不支持滚动方向: {direction}')
+
+    @staticmethod
+    def _resolve_scroll_steps(payload):
+        raw_steps = payload.get('steps', 5)
+        try:
+            steps = int(raw_steps)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('vnc scroll steps 必须大于 0') from exc
+        if steps <= 0:
+            raise ValueError('vnc scroll steps 必须大于 0')
+        return steps
+
+    @staticmethod
+    def _resolve_wait_seconds(payload, default=5):
+        raw_value = payload.get('seconds', payload.get('duration', default))
+        seconds = float(raw_value)
+        return max(1.0, min(seconds, 60.0))
 
     def _require_point(self, payload, key, fallback_keys=()):
         if key in payload:
