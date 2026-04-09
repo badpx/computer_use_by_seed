@@ -11,6 +11,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 
+_MISSING_MODULE = object()
+
+
 class FakeScreenshot:
     def __init__(self, size=(1280, 720)):
         self.size = size
@@ -93,6 +96,7 @@ class AgentContextTests(unittest.TestCase):
         os.environ['ARK_API_KEY'] = 'test-key'
         os.environ['DEVICE_NAME'] = 'local'
         os.environ.pop('DEVICE_CONFIG_JSON', None)
+        self._original_modules = {}
         self.temp_dir = tempfile.TemporaryDirectory()
         self.responses = []
         self.calls = []
@@ -107,6 +111,13 @@ class AgentContextTests(unittest.TestCase):
         self.agent_module = self._load_agent_module()
 
     def tearDown(self):
+        # Avoid leaking injected modules beyond this test harness.
+        for module_name in ('vncdotool', 'vncdotool.api'):
+            original = self._original_modules.get(module_name, _MISSING_MODULE)
+            if original is _MISSING_MODULE:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = original
         self.temp_dir.cleanup()
 
     def _load_agent_module(self):
@@ -137,6 +148,12 @@ class AgentContextTests(unittest.TestCase):
 
         # VNC plugin depends on vncdotool. Stub it so tests can exercise the
         # prompt-profile integration without installing external dependencies.
+        for module_name in ('vncdotool', 'vncdotool.api'):
+            if module_name not in self._original_modules:
+                self._original_modules[module_name] = sys.modules.get(
+                    module_name,
+                    _MISSING_MODULE,
+                )
         vncdotool_api_stub = types.ModuleType('vncdotool.api')
         png_bytes = base64.b64decode(
             'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8'
