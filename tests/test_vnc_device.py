@@ -449,6 +449,99 @@ class VncDeviceAdapterKeyboardCommandTests(unittest.TestCase):
             ],
         )
 
+    def test_scroll_invalid_direction_raises_validation_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        with self.assertRaisesRegex(ValueError, 'vnc 不支持滚动方向: diagonal'):
+            adapter.execute_command(
+                DeviceCommand(
+                    'scroll',
+                    {'point': [10, 20], 'direction': 'diagonal', 'steps': 2},
+                )
+            )
+
+        client.mouseMove.assert_not_called()
+        client.mousePress.assert_not_called()
+
+    def test_scroll_non_positive_steps_raise_validation_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        with self.assertRaisesRegex(ValueError, 'vnc scroll steps 必须大于 0'):
+            adapter.execute_command(
+                DeviceCommand(
+                    'scroll',
+                    {'point': [10, 20], 'direction': 'down', 'steps': 0},
+                )
+            )
+
+        with self.assertRaisesRegex(ValueError, 'vnc scroll steps 必须大于 0'):
+            adapter.execute_command(
+                DeviceCommand(
+                    'scroll',
+                    {'point': [10, 20], 'direction': 'down', 'steps': 'many'},
+                )
+            )
+
+        client.mouseMove.assert_not_called()
+        client.mousePress.assert_not_called()
+
+    def test_scroll_wraps_client_failure(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        client.mousePress.side_effect = RuntimeError('wheel failed')
+        adapter._client = client
+
+        with self.assertRaisesRegex(RuntimeError, 'vnc scroll 失败: wheel failed'):
+            adapter.execute_command(
+                DeviceCommand(
+                    'scroll',
+                    {'point': [100, 120], 'direction': 'down', 'steps': 2},
+                )
+            )
+
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.mouseMove(100, 120),
+                unittest.mock.call.mousePress(5),
+            ],
+        )
+
+    def test_key_down_missing_key_raises_validation_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        with self.assertRaisesRegex(ValueError, 'vnc key event 需要 key'):
+            adapter.execute_command(DeviceCommand('key_down', {}))
+
+        client.keyDown.assert_not_called()
+
+    def test_key_up_wraps_client_failure(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        client.keyUp.side_effect = RuntimeError('key up failed')
+        adapter._client = client
+
+        with self.assertRaisesRegex(RuntimeError, 'vnc key_up 失败: key up failed'):
+            adapter.execute_command(DeviceCommand('key_up', {'key': 'CTRL'}))
+
+        client.keyUp.assert_called_once_with('ctrl')
+
 
 class VncDeviceAdapterConnectionTests(unittest.TestCase):
     def _make_adapter(self, plugin_config):
