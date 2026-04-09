@@ -47,6 +47,7 @@ def check_dependencies():
         'pyperclip',
         'dotenv',
         'prompt_toolkit',
+        'vncdotool',
     ]
     
     missing = []
@@ -173,6 +174,10 @@ def main():
         print("  python -m computer_use              # 交互模式")
         print("  python -m computer_use '打开浏览器'  # 单次任务")
         print("  python -m computer_use '打开浏览器' --device local")
+        print(
+            "  python -m computer_use '打开远程桌面' --device vnc "
+            "--device-config-json '{\"host\":\"127.0.0.1\",\"port\":5900}'"
+        )
         return 0
     else:
         print(f"✗ 部分检查未通过 ({passed}/{total})")

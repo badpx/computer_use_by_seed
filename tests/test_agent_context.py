@@ -180,6 +180,10 @@ class AgentContextTests(unittest.TestCase):
         sys.modules['volcenginesdkarkruntime'] = ark_stub
         sys.modules['vncdotool'] = vncdotool_stub
         sys.modules['vncdotool.api'] = vncdotool_api_stub
+        # Force the VNC plugin to import against the current vncdotool stubs
+        # even if another test module imported it earlier in this process.
+        sys.modules.pop('computer_use.devices.plugins.vnc.plugin', None)
+        sys.modules.pop('computer_use.devices.plugins.vnc.adapter', None)
         sys.modules.pop('computer_use.agent', None)
 
         agent_module = importlib.import_module('computer_use.agent')

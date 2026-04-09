@@ -127,6 +127,27 @@ python -m computer_use "打开浏览器"
 - 目标手机需要在启动 Agent 之前就已经连接到电脑
 - 当前仅支持默认 adb 目标，请确保同一时刻只连接一个手机或模拟器
 
+### VNC Device
+
+使用 `DEVICE_NAME=vnc` 可以让 Agent 通过 `vncdotool` 连接远程 VNC 设备。
+
+- 运行前需要安装 `vncdotool`，并确保 `pip install -r requirements.txt` 已完成
+- 设备私有配置至少需要 `host`，可选 `port`、`password`、`prompt_profile`、`operating_system`
+- `prompt_profile` 默认为 `computer`，也可以通过 `DEVICE_CONFIG_JSON` 透传为 `cellphone`
+- `scroll(left/right)` 会尝试发送 VNC 扩展滚轮按钮 `6/7`，是否生效取决于远端 VNC 服务端和目标系统
+
+示例：
+
+```bash
+python -m computer_use "打开远程浏览器" \
+  --device vnc \
+  --device-config-json '{"host":"127.0.0.1","port":5900,"password":"secret"}'
+
+python -m computer_use "打开手机浏览器" \
+  --device vnc \
+  --device-config-json '{"host":"127.0.0.1","port":5901,"prompt_profile":"cellphone","operating_system":"Android"}'
+```
+
 ### `.env` 文件示例
 
 ```bash
@@ -157,6 +178,11 @@ NATURAL_SCROLL=
 # 需要先安装 adb 并连接好手机后再启动 agent
 # DEVICE_NAME=android_adb
 
+# VNC 设备示例
+# 需要先安装 vncdotool，并提供 host / port / password 等配置
+# DEVICE_NAME=vnc
+# DEVICE_CONFIG_JSON={"host":"127.0.0.1","port":5900,"password":"secret"}
+
 # 调试日志配置
 SAVE_CONTEXT_LOG=true
 CONTEXT_LOG_DIR=./logs
@@ -176,19 +202,18 @@ ARK_MODEL=ark-code-latest
 
 - 默认内置 `local` 设备插件，继续操作本地真机
 - 可以通过实现新的设备插件，对接远程桌面、sandbox 或其他云端机器
-- 插件通过目录扫描发现，内置插件在 `computer_use/devices/plugins/`，外部插件目录由 `DEVICES_DIR` 指定
+- 插件通过目录扫描发现，内置插件在 `computer_use/devices/plugins/`，工程根目录下的 `./plugins/` 会自动扫描，额外外部插件目录由 `DEVICES_DIR` 指定
 - 设备插件私有配置通过 `DEVICE_CONFIG_JSON` 或 `--device-config-json` 以 JSON 对象传入
 - 插件私有能力和接入方式建议写在各自目录下的 `README.md` 中，避免顶层文档耦合内部插件细节
 
 第一版设备插件要求返回结构化截图帧，而不是直接返回本地 `PIL.Image`：
 
-- `image_base64`
-- `mime_type`
+- `image_data_url`
 - `width`
 - `height`
 - `metadata`
 
-当前核心层已支持 `image/png` 和 `image/jpeg`，并默认保留插件返回的原始格式。
+当前核心层要求 `image_data_url` 为完整 data URL，至少支持 `image/png` 和 `image/jpeg`，并默认保留插件返回的原始格式。
 
 ### 历史上下文组织
 
@@ -246,7 +271,7 @@ python -m computer_use [指令] [选项]
 | `--reasoning-effort <level>` | `-r` | 设置方舟思考档位，取值 `minimal` / `low` / `medium` / `high` |
 | `--coordinate-space <space>` | - | 设置坐标空间，取值 `relative` / `pixel` |
 | `--coordinate-scale <value>` | - | 设置 `relative` 坐标量程，例如 `1` / `100` / `1000` |
-| `--device <name>` | - | 设置设备插件名称，例如 `local` |
+| `--device <name>` | - | 设置设备插件名称，例如 `local`、`android_adb`、`vnc` |
 | `--device-config-json <json>` | - | 设置设备插件私有 JSON 配置 |
 | `--devices-dir <path>` | - | 设置外部设备插件目录 |
 | `--display-index <index>` | - | 设置目标显示器编号，`0` 表示主显示器 |

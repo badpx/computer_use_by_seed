@@ -6,3 +6,4 @@ mss>=9.0.1
 pyperclip>=1.8.2
 python-dotenv>=1.0.0
 prompt_toolkit>=3.0.0
+vncdotool>=1.2.0
