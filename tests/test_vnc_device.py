@@ -1,4 +1,7 @@
 import unittest
+from unittest.mock import patch
+
+import computer_use.devices.plugins.vnc.adapter  # noqa: F401
 
 
 class VncDeviceAdapterConfigTests(unittest.TestCase):
@@ -84,3 +87,46 @@ class VncDeviceAdapterConfigTests(unittest.TestCase):
                 'connected': True,
             },
         )
+
+
+class VncDeviceAdapterConnectionTests(unittest.TestCase):
+    def _make_adapter(self, plugin_config):
+        from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter
+
+        return VncDeviceAdapter(plugin_config)
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_connect_creates_client_with_password(self, api_mock):
+        client = object()
+        api_mock.connect.return_value = client
+        adapter = self._make_adapter(
+            {'host': '10.0.0.8', 'port': 5901, 'password': 'secret'}
+        )
+
+        adapter.connect()
+
+        api_mock.connect.assert_called_once_with(
+            '10.0.0.8::5901', password='secret'
+        )
+        self.assertIs(adapter._client, client)
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_connect_wraps_connection_error(self, api_mock):
+        api_mock.connect.side_effect = ConnectionError('timeout')
+        adapter = self._make_adapter(
+            {'host': '10.0.0.8', 'port': 5901, 'password': 'secret'}
+        )
+
+        with self.assertRaisesRegex(RuntimeError, 'vnc connect 失败'):
+            adapter.connect()
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_close_disconnects_existing_client(self, api_mock):
+        client = unittest.mock.Mock()
+        adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
+        adapter._client = client
+
+        adapter.close()
+
+        self.assertIsNone(adapter._client)
+        client.disconnect.assert_called_once_with()
