@@ -20,6 +20,9 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
 
     def __init__(self, plugin_config: Dict[str, Any]):
         self.plugin_config = dict(plugin_config or {})
+        self.swipe_settle_seconds = self._resolve_swipe_settle_seconds(
+            self.plugin_config.get('swipe_settle_seconds', 1.0)
+        )
 
     @property
     def device_name(self) -> str:
@@ -134,6 +137,7 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
                 ],
                 action_label='swipe',
             )
+            time.sleep(self.swipe_settle_seconds)
             return 'swipe 执行成功'
 
         if command_type == 'type_text':
@@ -347,6 +351,17 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
         except (TypeError, ValueError) as exc:
             raise ValueError(f'android_adb wait seconds 格式无效: {raw_value}') from exc
         return max(1.0, min(60.0, seconds))
+
+    def _resolve_swipe_settle_seconds(self, raw_value: Any) -> float:
+        try:
+            seconds = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f'android_adb swipe_settle_seconds 格式无效: {raw_value}'
+            ) from exc
+        if seconds < 0:
+            raise ValueError('android_adb swipe_settle_seconds 不能小于 0')
+        return seconds
 
     def _escape_text(self, value: str) -> str:
         return value.replace('%', '%25').replace(' ', '%s')

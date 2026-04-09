@@ -27,10 +27,10 @@ class AndroidAdbPluginTests(unittest.TestCase):
 
 
 class AndroidAdbDeviceAdapterTests(unittest.TestCase):
-    def _make_adapter(self):
+    def _make_adapter(self, plugin_config=None):
         from computer_use.devices.plugins.android_adb.adapter import AndroidAdbDeviceAdapter
 
-        return AndroidAdbDeviceAdapter({})
+        return AndroidAdbDeviceAdapter(plugin_config or {})
 
     def _completed(self, args, returncode=0, stdout=b'', stderr=b''):
         return subprocess.CompletedProcess(
@@ -185,6 +185,8 @@ class AndroidAdbDeviceAdapterTests(unittest.TestCase):
         )
 
         with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.time.sleep'
+        ) as sleep_mock, mock.patch(
             'computer_use.devices.plugins.android_adb.adapter.subprocess.run',
             return_value=self._completed(
                 [
@@ -207,6 +209,80 @@ class AndroidAdbDeviceAdapterTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+        sleep_mock.assert_called_once_with(1.0)
+
+    def test_swipe_uses_configured_settle_seconds(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'swipe_settle_seconds': 2.5})
+        command = DeviceCommand(
+            'swipe',
+            {'start_point': [1, 2], 'end_point': [3, 4], 'duration_ms': 900},
+        )
+
+        with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.time.sleep'
+        ) as sleep_mock, mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.subprocess.run',
+            return_value=self._completed(
+                ['adb', 'shell', 'input', 'swipe', '1', '2', '3', '4', '900']
+            ),
+        ):
+            adapter.execute_command(command)
+
+        sleep_mock.assert_called_once_with(2.5)
+
+    def test_swipe_allows_zero_settle_seconds(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'swipe_settle_seconds': 0})
+        command = DeviceCommand(
+            'swipe',
+            {'start_point': [1, 2], 'end_point': [3, 4], 'duration_ms': 900},
+        )
+
+        with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.time.sleep'
+        ) as sleep_mock, mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.subprocess.run',
+            return_value=self._completed(
+                ['adb', 'shell', 'input', 'swipe', '1', '2', '3', '4', '900']
+            ),
+        ):
+            adapter.execute_command(command)
+
+        sleep_mock.assert_called_once_with(0.0)
+
+    def test_invalid_swipe_settle_seconds_raises_clear_error(self):
+        with self.assertRaisesRegex(ValueError, 'swipe_settle_seconds'):
+            self._make_adapter({'swipe_settle_seconds': 'bad'})
+
+        with self.assertRaisesRegex(ValueError, 'swipe_settle_seconds'):
+            self._make_adapter({'swipe_settle_seconds': -1})
+
+    def test_swipe_failure_does_not_wait(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter()
+        command = DeviceCommand(
+            'swipe',
+            {'start_point': [1, 2], 'end_point': [3, 4], 'duration_ms': 900},
+        )
+
+        with mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.time.sleep'
+        ) as sleep_mock, mock.patch(
+            'computer_use.devices.plugins.android_adb.adapter.subprocess.run',
+            return_value=self._completed(
+                ['adb', 'shell', 'input', 'swipe', '1', '2', '3', '4', '900'],
+                returncode=1,
+                stderr=b'gesture failed',
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, 'android_adb swipe'):
+                adapter.execute_command(command)
+
+        sleep_mock.assert_not_called()
 
     def test_wait_sleeps_for_explicit_seconds_without_adb_call(self):
         from computer_use.devices.base import DeviceCommand
