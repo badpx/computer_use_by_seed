@@ -1,4 +1,4 @@
-"""Stub VNC device adapter."""
+"""VNC device adapter."""
 
 from __future__ import annotations
 
@@ -84,13 +84,14 @@ class VncDeviceAdapter(DeviceAdapter):
         client = self._require_client()
         try:
             image = client.captureScreen()
+            buffer = io.BytesIO()
+            image.save(buffer, format='PNG')
+            image_bytes = buffer.getvalue()
+            width, height = detect_image_size(
+                image_bytes, mime_type='image/png'
+            )
         except Exception as exc:
             raise RuntimeError(f'vnc capture screenshot 失败: {exc}') from exc
-
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        image_bytes = buffer.getvalue()
-        width, height = detect_image_size(image_bytes, mime_type='image/png')
         return DeviceFrame(
             image_data_url=(
                 'data:image/png;base64,'

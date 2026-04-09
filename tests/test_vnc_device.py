@@ -1,15 +1,7 @@
-import base64
 import unittest
 from unittest.mock import patch
 
 import computer_use.devices.plugins.vnc.adapter  # noqa: F401
-
-
-PNG_1X1_BASE64 = (
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAA'
-    'AAC0lEQVR42mP8/x8AAwMCAO1q2m0AAAAASUVORK5CYII='
-)
-
 
 class VncDeviceAdapterConfigTests(unittest.TestCase):
     def _make_adapter(self, plugin_config):
@@ -237,6 +229,24 @@ class VncDeviceAdapterCaptureTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, 'vnc capture screenshot 失败'):
             adapter.capture_frame()
+
+        client.captureScreen.assert_called_once_with()
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_capture_frame_wraps_downstream_pipeline_errors(self, api_mock):
+        from PIL import Image
+
+        image = Image.new('RGB', (1, 1), color='white')
+        client = unittest.mock.Mock()
+        client.captureScreen.return_value = image
+        api_mock.connect.return_value = client
+        adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
+
+        with patch.object(image, 'save', side_effect=RuntimeError('save failed')):
+            with self.assertRaisesRegex(
+                RuntimeError, 'vnc capture screenshot 失败: save failed'
+            ):
+                adapter.capture_frame()
 
         client.captureScreen.assert_called_once_with()
 
