@@ -121,8 +121,72 @@ class VncDeviceAdapterConnectionTests(unittest.TestCase):
             adapter.connect()
 
     @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_connect_wraps_auth_error(self, api_mock):
+        api_mock.connect.side_effect = ConnectionError('auth failed')
+        adapter = self._make_adapter(
+            {'host': '10.0.0.8', 'port': 5901, 'password': 'secret'}
+        )
+
+        with self.assertRaisesRegex(RuntimeError, 'vnc 认证失败'):
+            adapter.connect()
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_connect_short_circuits_when_client_exists(self, api_mock):
+        adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
+        sentinel = object()
+        adapter._client = sentinel
+
+        adapter.connect()
+
+        api_mock.connect.assert_not_called()
+        self.assertIs(adapter._client, sentinel)
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api', None)
+    def test_connect_raises_when_dependency_missing(self):
+        adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
+
+        with self.assertRaisesRegex(
+            RuntimeError, '缺少 vncdotool 依赖，请先安装 vncdotool'
+        ):
+            adapter.connect()
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_require_client_returns_existing_client(self, api_mock):
+        adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
+        sentinel = object()
+        adapter._client = sentinel
+
+        self.assertIs(adapter._require_client(), sentinel)
+        api_mock.connect.assert_not_called()
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_require_client_connects_and_returns_client(self, api_mock):
+        client = object()
+        api_mock.connect.return_value = client
+        adapter = self._make_adapter(
+            {'host': '10.0.0.8', 'port': 5901, 'password': 'secret'}
+        )
+
+        self.assertIs(adapter._require_client(), client)
+        api_mock.connect.assert_called_once_with(
+            '10.0.0.8::5901', password='secret'
+        )
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
     def test_close_disconnects_existing_client(self, api_mock):
         client = unittest.mock.Mock()
+        adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
+        adapter._client = client
+
+        adapter.close()
+
+        self.assertIsNone(adapter._client)
+        client.disconnect.assert_called_once_with()
+
+    @patch('computer_use.devices.plugins.vnc.adapter.api')
+    def test_close_swallows_disconnect_failure(self, api_mock):
+        client = unittest.mock.Mock()
+        client.disconnect.side_effect = RuntimeError('disconnect failed')
         adapter = self._make_adapter({'host': '10.0.0.8', 'port': 5901})
         adapter._client = client
 

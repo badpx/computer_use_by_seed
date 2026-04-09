@@ -42,6 +42,8 @@ class VncDeviceAdapter(DeviceAdapter):
     def connect(self) -> None:
         if self._client is not None:
             return None
+        if api is None:
+            raise RuntimeError('缺少 vncdotool 依赖，请先安装 vncdotool')
 
         kwargs = {}
         if self.password is not None:
