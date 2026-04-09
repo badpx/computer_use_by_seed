@@ -89,6 +89,57 @@ class VncDeviceAdapterConfigTests(unittest.TestCase):
         )
 
 
+class VncDeviceAdapterFailureTests(unittest.TestCase):
+    def _make_adapter(self, plugin_config):
+        from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter
+
+        return VncDeviceAdapter(plugin_config)
+
+    def test_unsupported_command_raises_value_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+
+        with self.assertRaisesRegex(ValueError, r'^vnc 不支持命令类型: nope$'):
+            adapter.execute_command(DeviceCommand('nope', {}))
+
+    def test_malformed_coordinate_payload_raises_value_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        adapter._client = unittest.mock.Mock()
+
+        with self.assertRaisesRegex(ValueError, r'^vnc 坐标格式无效: bad$'):
+            adapter.execute_command(DeviceCommand('click', {'point': 'bad'}))
+
+    def test_status_reports_connection_target_metadata(self):
+        adapter = self._make_adapter({'host': '127.0.0.1', 'port': 6001})
+
+        self.assertEqual(
+            adapter.get_status(),
+            {
+                'device_name': 'vnc',
+                'connected_via': 'vnc',
+                'host': '127.0.0.1',
+                'port': 6001,
+                'connected': False,
+            },
+        )
+
+        adapter._client = object()
+
+        self.assertEqual(
+            adapter.get_status(),
+            {
+                'device_name': 'vnc',
+                'connected_via': 'vnc',
+                'host': '127.0.0.1',
+                'port': 6001,
+                'connected': True,
+            },
+        )
+
+
 class VncDeviceAdapterMouseCommandTests(unittest.TestCase):
     def _make_adapter(self, plugin_config):
         from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter
