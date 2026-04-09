@@ -205,19 +205,26 @@ class VncDeviceAdapter(DeviceAdapter):
                 main_key = keys[-1]
                 modifiers = keys[:-1]
 
+                pressed_modifiers = []
+                primary_error = None
                 try:
                     for key in modifiers:
                         client.keyDown(key)
+                        pressed_modifiers.append(key)
                     client.keyPress(main_key)
+                except Exception as exc:
+                    primary_error = exc
+                    raise
                 finally:
                     release_error = None
-                    for key in reversed(modifiers):
+                    for key in reversed(pressed_modifiers):
                         try:
                             client.keyUp(key)
                         except Exception as exc:
                             if release_error is None:
                                 release_error = exc
-                    if release_error is not None:
+
+                    if primary_error is None and release_error is not None:
                         raise release_error
 
                 return 'hotkey 执行成功'
@@ -318,7 +325,10 @@ class VncDeviceAdapter(DeviceAdapter):
     @staticmethod
     def _resolve_wait_seconds(payload, default=5):
         raw_value = payload.get('seconds', payload.get('duration', default))
-        seconds = float(raw_value)
+        try:
+            seconds = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'vnc wait seconds 格式无效: {raw_value}') from exc
         return max(1.0, min(seconds, 60.0))
 
     def _require_point(self, payload, key, fallback_keys=()):

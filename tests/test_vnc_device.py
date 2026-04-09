@@ -228,8 +228,8 @@ class VncDeviceAdapterMouseCommandTests(unittest.TestCase):
 
         adapter = self._make_adapter({'host': '127.0.0.1'})
 
-        with self.assertRaisesRegex(ValueError, 'vnc 不支持命令类型: scroll'):
-            adapter.execute_command(DeviceCommand('scroll', {}))
+        with self.assertRaisesRegex(ValueError, 'vnc 不支持命令类型: swipe'):
+            adapter.execute_command(DeviceCommand('swipe', {}))
 
     def test_drag_calls_mouseup_when_second_move_fails(self):
         from computer_use.devices.base import DeviceCommand
@@ -360,6 +360,94 @@ class VncDeviceAdapterKeyboardCommandTests(unittest.TestCase):
 
         self.assertEqual(result, '等待 3 秒')
         sleep_mock.assert_called_once_with(3.0)
+
+    def test_wait_invalid_input_raises_validation_error(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+
+        with patch(
+            'computer_use.devices.plugins.vnc.adapter.time.sleep'
+        ) as sleep_mock, patch.object(
+            adapter,
+            '_require_client',
+            side_effect=AssertionError('should not connect'),
+        ):
+            with self.assertRaisesRegex(ValueError, 'vnc wait seconds 格式无效'):
+                adapter.execute_command(DeviceCommand('wait', {'seconds': 'fast'}))
+
+        sleep_mock.assert_not_called()
+
+    def test_hotkey_rejects_missing_key(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        with self.assertRaisesRegex(ValueError, 'vnc hotkey 需要 key'):
+            adapter.execute_command(DeviceCommand('hotkey', {'key': ''}))
+
+        client.keyDown.assert_not_called()
+        client.keyUp.assert_not_called()
+        client.keyPress.assert_not_called()
+
+    def test_type_text_wraps_client_failure(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        client.keyType.side_effect = RuntimeError('boom')
+        adapter._client = client
+
+        with self.assertRaisesRegex(RuntimeError, 'vnc type_text 失败: boom'):
+            adapter.execute_command(DeviceCommand('type_text', {'content': 'hello'}))
+
+        client.keyType.assert_called_once_with('hello')
+
+    def test_hotkey_releases_only_pressed_modifiers_and_preserves_primary_failure(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        client.keyDown.side_effect = [None, RuntimeError('down failed')]
+        client.keyUp.side_effect = RuntimeError('up failed')
+        adapter._client = client
+
+        with self.assertRaisesRegex(RuntimeError, 'vnc hotkey 失败: down failed'):
+            adapter.execute_command(DeviceCommand('hotkey', {'key': 'ctrl shift a'}))
+
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.keyDown('ctrl'),
+                unittest.mock.call.keyDown('shift'),
+                unittest.mock.call.keyUp('ctrl'),
+            ],
+        )
+        client.keyPress.assert_not_called()
+
+    def test_hotkey_raises_keyup_failure_after_success(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        client.keyUp.side_effect = [RuntimeError('up failed'), None]
+        adapter._client = client
+
+        with self.assertRaisesRegex(RuntimeError, 'vnc hotkey 失败: up failed'):
+            adapter.execute_command(DeviceCommand('hotkey', {'key': 'ctrl shift a'}))
+
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.keyDown('ctrl'),
+                unittest.mock.call.keyDown('shift'),
+                unittest.mock.call.keyPress('a'),
+                unittest.mock.call.keyUp('shift'),
+                unittest.mock.call.keyUp('ctrl'),
+            ],
+        )
 
 
 class VncDeviceAdapterConnectionTests(unittest.TestCase):
