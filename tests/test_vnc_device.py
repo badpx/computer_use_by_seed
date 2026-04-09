@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import computer_use.devices.plugins.vnc.adapter  # noqa: F401
 
+
 class VncDeviceAdapterConfigTests(unittest.TestCase):
     def _make_adapter(self, plugin_config):
         from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter
@@ -85,6 +86,103 @@ class VncDeviceAdapterConfigTests(unittest.TestCase):
                 'port': 6001,
                 'connected': True,
             },
+        )
+
+
+class VncDeviceAdapterMouseCommandTests(unittest.TestCase):
+    def _make_adapter(self, plugin_config):
+        from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter
+
+        return VncDeviceAdapter(plugin_config)
+
+    def test_click_moves_then_left_clicks(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(DeviceCommand('click', {'point': [12, 34]}))
+
+        self.assertEqual(result, 'click 执行成功')
+        self.assertEqual(
+            client.method_calls,
+            [unittest.mock.call.mouseMove(12, 34), unittest.mock.call.mousePress(1)],
+        )
+
+    def test_double_click_moves_then_clicks_twice(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(
+            DeviceCommand('double_click', {'point': [20, 40]})
+        )
+
+        self.assertEqual(result, 'double_click 执行成功')
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.mouseMove(20, 40),
+                unittest.mock.call.mousePress(1),
+                unittest.mock.call.mousePress(1),
+            ],
+        )
+
+    def test_right_click_uses_button_three(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(
+            DeviceCommand('right_click', {'point': [50, 60]})
+        )
+
+        self.assertEqual(result, 'right_click 执行成功')
+        self.assertEqual(
+            client.method_calls,
+            [unittest.mock.call.mouseMove(50, 60), unittest.mock.call.mousePress(3)],
+        )
+
+    def test_move_only_moves_pointer(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(DeviceCommand('move', {'point': [70, 80]}))
+
+        self.assertEqual(result, 'move 执行成功')
+        self.assertEqual(client.method_calls, [unittest.mock.call.mouseMove(70, 80)])
+
+    def test_drag_presses_moves_and_releases(self):
+        from computer_use.devices.base import DeviceCommand
+
+        adapter = self._make_adapter({'host': '127.0.0.1'})
+        client = unittest.mock.Mock()
+        adapter._client = client
+
+        result = adapter.execute_command(
+            DeviceCommand(
+                'drag',
+                {'start_point': [10, 20], 'end_point': [30, 40]},
+            )
+        )
+
+        self.assertEqual(result, 'drag 执行成功')
+        self.assertEqual(
+            client.method_calls,
+            [
+                unittest.mock.call.mouseMove(10, 20),
+                unittest.mock.call.mouseDown(1),
+                unittest.mock.call.mouseMove(30, 40),
+                unittest.mock.call.mouseUp(1),
+            ],
         )
 
 

@@ -108,7 +108,80 @@ class VncDeviceAdapter(DeviceAdapter):
         )
 
     def execute_command(self, command: DeviceCommand):
+        payload = dict(command.payload or {})
+        command_type = str(command.command_type or '').strip().lower()
+
+        if command_type in {
+            'click',
+            'double_click',
+            'right_click',
+            'move',
+            'drag',
+        }:
+            client = self._require_client()
+
+        if command_type == 'click':
+            point = self._require_point(payload, 'point')
+            client.mouseMove(point[0], point[1])
+            client.mousePress(1)
+            return 'click 执行成功'
+
+        if command_type == 'double_click':
+            point = self._require_point(payload, 'point')
+            client.mouseMove(point[0], point[1])
+            client.mousePress(1)
+            client.mousePress(1)
+            return 'double_click 执行成功'
+
+        if command_type == 'right_click':
+            point = self._require_point(payload, 'point')
+            client.mouseMove(point[0], point[1])
+            client.mousePress(3)
+            return 'right_click 执行成功'
+
+        if command_type == 'move':
+            point = self._require_point(payload, 'point')
+            client.mouseMove(point[0], point[1])
+            return 'move 执行成功'
+
+        if command_type == 'drag':
+            start_point = self._require_point(
+                payload,
+                'start_point',
+                fallback_keys=['start_box'],
+            )
+            end_point = self._require_point(
+                payload,
+                'end_point',
+                fallback_keys=['end_box'],
+            )
+            client.mouseMove(start_point[0], start_point[1])
+            client.mouseDown(1)
+            client.mouseMove(end_point[0], end_point[1])
+            client.mouseUp(1)
+            return 'drag 执行成功'
+
         raise NotImplementedError
+
+    def _require_point(self, payload, key, fallback_keys=()):
+        if key in payload:
+            value = payload[key]
+        else:
+            value = None
+            for fallback_key in fallback_keys:
+                if fallback_key in payload:
+                    value = payload[fallback_key]
+                    break
+            else:
+                raise ValueError(f'vnc 命令缺少坐标: {key}')
+
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            try:
+                return [int(value[0]), int(value[1])]
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f'vnc 坐标格式无效: {value}') from exc
+
+        raise ValueError(f'vnc 坐标格式无效: {value}')
 
     def get_status(self) -> Dict[str, Any]:
         return {
