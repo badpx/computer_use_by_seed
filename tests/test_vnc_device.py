@@ -25,6 +25,20 @@ class VncDeviceAdapterConfigTests(unittest.TestCase):
 
         self.assertEqual(adapter.get_prompt_profile(), 'cellphone')
 
+    def test_port_and_password_are_stored_on_adapter(self):
+        adapter = self._make_adapter(
+            {'host': '127.0.0.1', 'port': '6001', 'password': 'secret'}
+        )
+
+        self.assertEqual(adapter.port, 6001)
+        self.assertEqual(adapter.password, 'secret')
+
+    def test_invalid_port_raises_value_error(self):
+        from computer_use.devices.plugins.vnc.adapter import VncDeviceAdapter
+
+        with self.assertRaisesRegex(ValueError, 'port'):
+            VncDeviceAdapter({'host': '127.0.0.1', 'port': 'not-a-number'})
+
     def test_environment_info_uses_default_operating_system(self):
         adapter = self._make_adapter({'host': '127.0.0.1'})
 
@@ -41,4 +55,32 @@ class VncDeviceAdapterConfigTests(unittest.TestCase):
         self.assertEqual(
             adapter.get_environment_info(),
             {'operating_system': 'Windows 11'},
+        )
+
+    def test_get_status_returns_connection_metadata(self):
+        adapter = self._make_adapter({'host': '127.0.0.1', 'port': 6001})
+
+        self.assertEqual(
+            adapter.get_status(),
+            {
+                'device_name': 'vnc',
+                'connected_via': 'vnc',
+                'host': '127.0.0.1',
+                'port': 6001,
+                'connected': False,
+            },
+        )
+
+        sentinel = object()
+        adapter._client = sentinel
+
+        self.assertEqual(
+            adapter.get_status(),
+            {
+                'device_name': 'vnc',
+                'connected_via': 'vnc',
+                'host': '127.0.0.1',
+                'port': 6001,
+                'connected': True,
+            },
         )

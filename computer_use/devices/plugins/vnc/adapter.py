@@ -14,7 +14,10 @@ class VncDeviceAdapter(DeviceAdapter):
         if not self.host:
             raise ValueError('vnc 设备配置缺少 host')
         raw_port = self.plugin_config.get('port', 5900)
-        self.port = int(raw_port)
+        try:
+            self.port = int(raw_port)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('vnc 设备配置中的 port 无效') from exc
         self.password = self.plugin_config.get('password')
         self.prompt_profile = str(
             self.plugin_config.get('prompt_profile') or 'computer'
