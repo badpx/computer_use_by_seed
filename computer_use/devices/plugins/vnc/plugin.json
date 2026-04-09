@@ -1,0 +1,5 @@
+{
+  "name": "vnc",
+  "description": "Operate remote devices over the VNC protocol using vncdotool.",
+  "entrypoint": "plugin:create_adapter"
+}

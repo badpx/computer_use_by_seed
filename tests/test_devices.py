@@ -154,6 +154,14 @@ class DeviceRegistryTests(unittest.TestCase):
         self.assertIn('android_adb', plugins)
         self.assertEqual(plugins['android_adb'].name, 'android_adb')
 
+    def test_discover_device_plugins_includes_built_in_vnc(self):
+        from computer_use.devices.registry import discover_device_plugins
+
+        plugins = discover_device_plugins()
+
+        self.assertIn('vnc', plugins)
+        self.assertEqual(plugins['vnc'].name, 'vnc')
+
     def test_discover_device_plugins_finds_project_root_plugin_by_default(self):
         from computer_use.devices import registry as registry_module
 
@@ -375,6 +383,19 @@ class DeviceRegistryTests(unittest.TestCase):
             adapter = factory({'token': 'abc'})
 
         self.assertEqual(adapter.config, {'token': 'abc'})
+
+
+class DeviceFactoryTests(unittest.TestCase):
+    def test_create_device_adapter_loads_vnc_plugin(self):
+        from computer_use.devices.factory import create_device_adapter
+
+        adapter = create_device_adapter(
+            device_name='vnc',
+            device_config={'host': '127.0.0.1'},
+        )
+
+        self.assertEqual(adapter.device_name, 'vnc')
+        self.assertEqual(adapter.get_prompt_profile(), 'computer')
 
 
 class LocalDeviceAdapterTests(unittest.TestCase):
