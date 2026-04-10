@@ -76,6 +76,19 @@ class ActionParserCoordinateTests(unittest.TestCase):
             '已在浏览器的在线画板中间完成回字的正确绘制',
         )
 
+    def test_parse_finished_content_with_embedded_apostrophe_and_comma(self):
+        parsed = parse_action(
+            "Action: finished(content='上海城中希尔顿酒店的地址是：上海市长宁区延安西路488号"
+            "（英文：长宁区488WestYan'anRoad, Shanghai）。')"
+        )
+
+        self.assertEqual(parsed['action_type'], 'finished')
+        self.assertEqual(
+            parsed['action_inputs']['content'],
+            "上海城中希尔顿酒店的地址是：上海市长宁区延安西路488号"
+            "（英文：长宁区488WestYan'anRoad, Shanghai）。",
+        )
+
     def test_parse_wait_seconds_as_float(self):
         parsed = parse_action("Action: wait(seconds=12)")
 

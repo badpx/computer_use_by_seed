@@ -160,6 +160,8 @@ class ActionParser:
                     escaped = False
                 elif char == '\\':
                     escaped = True
+                elif self._is_in_word_apostrophe(text, index, in_quote):
+                    pass
                 elif char == in_quote:
                     in_quote = None
                 continue
@@ -277,11 +279,13 @@ class ActionParser:
         params = []
         current = ''
         in_quote = None
-        
-        for char in params_str:
+
+        for index, char in enumerate(params_str):
             if char in '"\'':
                 if in_quote is None:
                     in_quote = char
+                elif self._is_in_word_apostrophe(params_str, index, in_quote):
+                    pass
                 elif in_quote == char:
                     in_quote = None
                 current += char
@@ -295,6 +299,15 @@ class ActionParser:
             params.append(current)
         
         return params
+
+    @staticmethod
+    def _is_in_word_apostrophe(text: str, index: int, in_quote: Optional[str]) -> bool:
+        """判断单引号是否只是单词内部的撇号，而不是字符串结束符。"""
+        if in_quote != "'" or text[index] != "'":
+            return False
+        if index <= 0 or index >= len(text) - 1:
+            return False
+        return text[index - 1].isalnum() and text[index + 1].isalnum()
 
 
 # 全局解析器实例
