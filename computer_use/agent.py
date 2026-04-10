@@ -16,7 +16,7 @@ from volcenginesdkarkruntime import Ark
 
 from .config import config, normalize_coordinate_space, resolve_thinking_settings
 from .action_parser import parse_action
-from .devices import create_device_adapter
+from .devices import create_device_adapter, discover_device_plugins
 from .devices.base import DeviceAdapter, DeviceCommand, DeviceFrame
 from .devices.command_mapper import map_action_to_command
 from .devices.coordinates import (
@@ -233,6 +233,9 @@ class ComputerUseAgent:
             adapter=device_adapter,
         )
         self.device_name = getattr(self.device, 'device_name', self.device_name)
+        self.device_control_method_description = (
+            self._resolve_device_control_method_description()
+        )
         self.device.connect()
         self.current_display_info = self._extract_display_info_from_device_status()
 
@@ -1445,6 +1448,9 @@ class ComputerUseAgent:
             f"- Local date: {runtime_context['date']}",
             f"- Local weekday: {runtime_context['weekday']}",
         ]
+        device_control_method = runtime_context.get('device_control_method')
+        if device_control_method:
+            lines.append(f'- Device control method: {device_control_method}')
         location = runtime_context.get('location')
         if location:
             lines.append(f'- Approximate location: {location}')
@@ -1474,10 +1480,26 @@ class ComputerUseAgent:
             'date': current_local_time.strftime('%Y-%m-%d'),
             'weekday': current_local_time.strftime('%A'),
         }
+        if self.device_control_method_description:
+            runtime_context['device_control_method'] = (
+                self.device_control_method_description
+            )
         location = self._get_approximate_location()
         if location:
             runtime_context['location'] = location
         return runtime_context
+
+    def _resolve_device_control_method_description(self) -> str:
+        """从设备插件清单中解析当前设备的操控方式描述。"""
+        try:
+            plugins = discover_device_plugins([self.devices_dir] if self.devices_dir else None)
+        except Exception:
+            return ''
+
+        spec = plugins.get(self.device_name)
+        if spec is None:
+            return ''
+        return str(spec.description or '').strip()
 
     def _safe_device_environment_info(self) -> Dict[str, Any]:
         """获取设备环境信息；失败时回退为空。"""

@@ -975,6 +975,53 @@ class AgentContextTests(unittest.TestCase):
 
         self.assertEqual(runtime_context['operating_system'], 'macOS 15.4')
 
+    def test_runtime_context_includes_device_control_method_from_plugin_description(self):
+        agent = self._make_agent(verbose=False, device_name='local')
+
+        runtime_context = agent._get_runtime_context()
+
+        self.assertEqual(
+            runtime_context['device_control_method'],
+            'Operate the local machine using the existing screenshot and pyautogui stack.',
+        )
+
+    def test_runtime_context_omits_device_control_method_when_plugin_description_is_unavailable(self):
+        class FakeInjectedDevice:
+            def connect(self):
+                return None
+
+            def close(self):
+                return None
+
+            def capture_frame(self):
+                raise NotImplementedError
+
+            def execute_command(self, command):
+                raise NotImplementedError
+
+            def get_status(self):
+                return {}
+
+            def get_environment_info(self):
+                return {}
+
+            def get_prompt_profile(self):
+                return 'computer'
+
+            @property
+            def device_name(self):
+                return 'unknown-injected-device'
+
+        agent = self._make_agent(
+            verbose=False,
+            device_adapter=FakeInjectedDevice(),
+            device_name='unknown-injected-device',
+        )
+
+        runtime_context = agent._get_runtime_context()
+
+        self.assertNotIn('device_control_method', runtime_context)
+
     def test_get_operating_system_description_formats_macos_versions(self):
         agent = self._make_agent(verbose=False)
 
