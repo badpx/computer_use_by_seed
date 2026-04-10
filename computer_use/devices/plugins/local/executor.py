@@ -278,7 +278,7 @@ class LocalActionExecutor:
         return result
 
     def _execute_wait(self, action_inputs: Dict[str, Any]) -> str:
-        seconds = float(action_inputs.get('seconds', 5))
+        seconds = float(action_inputs.get('seconds', 3))
         seconds = max(1.0, min(60.0, seconds))
         time.sleep(seconds)
         seconds_text = int(seconds) if seconds.is_integer() else seconds

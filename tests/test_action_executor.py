@@ -215,6 +215,12 @@ class LocalActionExecutorTests(unittest.TestCase):
         self.assertEqual(self.sleep_calls, [7.0])
         self.assertEqual(result, '等待 7 秒')
 
+    def test_wait_uses_three_seconds_by_default(self):
+        executor = self._make_executor()
+        result = executor.execute({'action_type': 'wait', 'action_inputs': {}})
+        self.assertEqual(self.sleep_calls, [3.0])
+        self.assertEqual(result, '等待 3 秒')
+
     def test_wait_clamps_values_below_one_second(self):
         executor = self._make_executor()
         result = executor.execute({'action_type': 'wait', 'action_inputs': {'seconds': 0}})

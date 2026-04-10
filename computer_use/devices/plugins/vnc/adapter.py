@@ -351,7 +351,7 @@ class VncDeviceAdapter(DeviceAdapter):
         return steps
 
     @staticmethod
-    def _resolve_wait_seconds(payload, default=5):
+    def _resolve_wait_seconds(payload, default=3):
         raw_value = payload.get('seconds', payload.get('duration', default))
         try:
             seconds = float(raw_value)

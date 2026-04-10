@@ -355,7 +355,7 @@ class AndroidAdbDeviceAdapter(DeviceAdapter):
             return f'HSCROLL,{-steps}'
         raise ValueError(f'android_adb 不支持滚动方向: {direction}')
 
-    def _resolve_wait_seconds(self, payload: Dict[str, Any], default: float = 5) -> float:
+    def _resolve_wait_seconds(self, payload: Dict[str, Any], default: float = 3) -> float:
         raw_value = payload.get('seconds', payload.get('duration', default))
         try:
             seconds = float(raw_value)
