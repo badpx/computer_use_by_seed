@@ -1,6 +1,6 @@
 ---
 name: open-browser
-description: Open a web browser and navigate to a specific URL using keyboard shortcuts and the address bar. Use this skill when the task involves opening a browser, visiting a website, or navigating to a URL.
+description: Open a web browser and navigate to a specific URL using keyboard shortcuts and the address bar on desktop operating systems. Use this skill for macOS, Windows, or Linux browser tasks, not for cellphone systems.
 ---
 
 ## Instructions
