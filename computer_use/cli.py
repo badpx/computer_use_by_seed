@@ -17,6 +17,7 @@ from .config import config
 DEFAULT_HISTORY_FILE = Path.home() / '.computer_use_history'
 CONTEXT_WINDOW_BYTES = 256 * 1024
 TOKEN_ESTIMATE_BYTES = 4
+CONTEXT_WARNING_PERCENT = 85
 
 
 def _parse_device_config_json(raw_json: str) -> Dict[str, Any]:
@@ -52,11 +53,12 @@ class InteractiveStatusBar:
 
     def render(self) -> str:
         """渲染底部状态栏文本。"""
+        context_icon = '🪫' if self.context_percent >= CONTEXT_WARNING_PERCENT else '🔋'
         parts = [
             f"🧠 {self.model} {self.reasoning_effort} | "
-            f"Context: {self.context_percent}% | "
-            f"Skills: {self.active_skills}/{self.total_skills} | "
-            f"🕤 {self._format_elapsed_time(self._current_total_elapsed_seconds())}"
+            f"{context_icon} {self.context_percent}% | "
+            f"🛠️ {self.active_skills}/{self.total_skills} | "
+            f"⏱️ {self._format_elapsed_time(self._current_total_elapsed_seconds())}"
         ]
         if self.status_note:
             parts.append(f" | {self.status_note}")

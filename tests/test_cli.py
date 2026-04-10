@@ -207,7 +207,7 @@ class CliPromptTests(unittest.TestCase):
             [prompt['text'] for prompt in fake_session.prompts],
             ['> ', '> '],
         )
-        self.assertIn('Context: 0%', fake_session.prompts[0]['bottom_toolbar'])
+        self.assertIn('🔋 0%', fake_session.prompts[0]['bottom_toolbar'])
         self.assertIsNotNone(fake_session.prompts[0]['completer'])
         self.assertTrue(fake_session.prompts[0]['complete_while_typing'])
 
@@ -315,12 +315,12 @@ class CliPromptTests(unittest.TestCase):
         first_toolbar = fake_session.prompts[0]['bottom_toolbar']
         second_toolbar = fake_session.prompts[1]['bottom_toolbar']
         self.assertIn('🧠 fake-model high', first_toolbar)
-        self.assertIn('Context: 0%', first_toolbar)
-        self.assertIn('Skills: 0/3', first_toolbar)
-        self.assertIn('🕤 0m', first_toolbar)
-        self.assertIn('Context: 6%', second_toolbar)
-        self.assertIn('Skills: 1/3', second_toolbar)
-        self.assertIn('🕤 0m', second_toolbar)
+        self.assertIn('🔋 0%', first_toolbar)
+        self.assertIn('🛠️ 0/3', first_toolbar)
+        self.assertIn('⏱️ 0m', first_toolbar)
+        self.assertIn('🔋 6%', second_toolbar)
+        self.assertIn('🛠️ 1/3', second_toolbar)
+        self.assertIn('⏱️ 0m', second_toolbar)
 
     def test_status_bar_renders_runtime_status_note_at_the_end(self):
         status_bar = self.cli.InteractiveStatusBar(
@@ -339,9 +339,23 @@ class CliPromptTests(unittest.TestCase):
         )
 
         rendered = status_bar.render()
-        self.assertIn('Context: 86%', rendered)
-        self.assertIn('Skills: 1/3', rendered)
+        self.assertIn('🪫 86%', rendered)
+        self.assertIn('🛠️ 1/3', rendered)
         self.assertTrue(rendered.endswith(' | Auto compact soon'))
+
+    def test_status_bar_switches_context_battery_icon_at_warning_threshold(self):
+        status_bar = self.cli.InteractiveStatusBar(
+            model='fake-model',
+            thinking_mode='enabled',
+            reasoning_effort='high',
+            total_skills=3,
+        )
+
+        status_bar.context_percent = 84
+        self.assertIn('🔋 84%', status_bar.render())
+
+        status_bar.context_percent = 85
+        self.assertIn('🪫 85%', status_bar.render())
 
     def test_status_bar_formats_duration_in_minutes_or_hours(self):
         status_bar = self.cli.InteractiveStatusBar(
