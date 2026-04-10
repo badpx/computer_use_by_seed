@@ -15,8 +15,7 @@ from .config import config
 
 
 DEFAULT_HISTORY_FILE = Path.home() / '.computer_use_history'
-CONTEXT_WINDOW_BYTES = 256 * 1024
-TOKEN_ESTIMATE_BYTES = 4
+CONTEXT_WINDOW_TOKENS = 256 * 1024
 CONTEXT_WARNING_PERCENT = 85
 
 
@@ -69,16 +68,16 @@ class InteractiveStatusBar:
         usage_total_tokens = runtime_status.get('usage_total_tokens')
         if usage_total_tokens is not None:
             try:
-                used_bytes = int(usage_total_tokens) * TOKEN_ESTIMATE_BYTES
+                used_tokens = int(usage_total_tokens)
             except (TypeError, ValueError):
-                used_bytes = 0
+                used_tokens = 0
         else:
             try:
-                used_bytes = int(runtime_status.get('context_estimated_bytes') or 0)
+                used_tokens = int(runtime_status.get('context_estimated_tokens') or 0)
             except (TypeError, ValueError):
-                used_bytes = 0
+                used_tokens = 0
 
-        self.context_percent = self._to_percent(used_bytes)
+        self.context_percent = self._to_percent(used_tokens)
         self.active_skills = len(runtime_status.get('activated_skills') or [])
         self.status_note = str(runtime_status.get('status_note') or '')
 
@@ -116,9 +115,9 @@ class InteractiveStatusBar:
             return 0.0
         return max(0.0, time.perf_counter() - self.current_task_started_at)
 
-    def _to_percent(self, used_bytes: int) -> int:
-        """将上下文字节数转换为百分比。"""
-        percent = round(max(0, used_bytes) * 100 / CONTEXT_WINDOW_BYTES)
+    def _to_percent(self, used_tokens: int) -> int:
+        """将上下文 token 数转换为百分比。"""
+        percent = round(max(0, used_tokens) * 100 / CONTEXT_WINDOW_TOKENS)
         return max(0, min(100, percent))
 
     def _format_elapsed_time(self, elapsed_seconds: float) -> str:

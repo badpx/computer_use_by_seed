@@ -286,7 +286,7 @@ class CliPromptTests(unittest.TestCase):
                     'elapsed_seconds': 12.5,
                     'runtime_status': {
                         'usage_total_tokens': 4096,
-                        'context_estimated_bytes': 0,
+                        'context_estimated_tokens': 0,
                         'activated_skills': ['open-browser'],
                     },
                 }
@@ -318,7 +318,7 @@ class CliPromptTests(unittest.TestCase):
         self.assertIn('🔋 0%', first_toolbar)
         self.assertIn('🛠️ 0/3', first_toolbar)
         self.assertIn('⏱️ 0m', first_toolbar)
-        self.assertIn('🔋 6%', second_toolbar)
+        self.assertIn('🔋 2%', second_toolbar)
         self.assertIn('🛠️ 1/3', second_toolbar)
         self.assertIn('⏱️ 0m', second_toolbar)
 
@@ -332,7 +332,7 @@ class CliPromptTests(unittest.TestCase):
 
         status_bar.update_live_status(
             {
-                'context_estimated_bytes': int(self.cli.CONTEXT_WINDOW_BYTES * 0.86),
+                'context_estimated_tokens': int(self.cli.CONTEXT_WINDOW_TOKENS * 0.86),
                 'activated_skills': ['open-browser'],
                 'status_note': 'Auto compact soon',
             }

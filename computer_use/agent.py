@@ -28,11 +28,10 @@ from .logging_utils import ContextLogger
 from .prompts import COMPUTER_USE_DOUBAO, PHONE_USE_DOUBAO, SKILLS_PROMPT_ADDENDUM
 from .skills import Skill, discover_skills, skills_to_tools, load_skill
 
-TOKEN_ESTIMATE_BYTES = 4
 SCREENSHOT_TOKEN_ESTIMATE = 2000
-CONTEXT_WINDOW_BYTES = 256 * 1024
-CONTEXT_COMPACTION_WARNING_BYTES = int(CONTEXT_WINDOW_BYTES * 0.85)
-CONTEXT_COMPACTION_THRESHOLD_BYTES = int(CONTEXT_WINDOW_BYTES * 0.9)
+CONTEXT_WINDOW_TOKENS = 256 * 1024
+CONTEXT_COMPACTION_WARNING_TOKENS = int(CONTEXT_WINDOW_TOKENS * 0.85)
+CONTEXT_COMPACTION_THRESHOLD_TOKENS = int(CONTEXT_WINDOW_TOKENS * 0.9)
 COMPACTION_MAX_TOKENS_BASE = 400
 COMPACTION_MAX_TOKENS_MIN = 50
 COMPACTION_TURNS_PER_BUCKET = 10
@@ -230,7 +229,7 @@ class ComputerUseAgent:
         self.activated_skills: Set[str] = set()
         self.history: List[Dict[str, Any]] = []
         self.last_usage_total_tokens: Optional[int] = None
-        self.last_context_estimated_bytes = 0
+        self.last_context_estimated_tokens = 0
         self._runtime_status_note = ''
         self._suppress_auto_compact_warning = False
 
@@ -354,8 +353,8 @@ class ComputerUseAgent:
                         current_screenshot_item=current_screenshot_item,
                     )
                 )
-                self._set_context_estimated_bytes(
-                    self._estimate_context_bytes(messages)
+                self._set_context_estimated_tokens(
+                    self._estimate_context_tokens(messages)
                 )
                 self._notify_runtime_status()
 
@@ -439,8 +438,8 @@ class ComputerUseAgent:
                         parsed_action='',
                         include_feedback=True,
                     )
-                    self._set_context_estimated_bytes(
-                        self._estimate_next_context_bytes()
+                    self._set_context_estimated_tokens(
+                        self._estimate_next_context_tokens()
                     )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
@@ -491,8 +490,8 @@ class ComputerUseAgent:
                         parsed_action=parsed_action,
                         include_feedback=False,
                     )
-                    self._set_context_estimated_bytes(
-                        self._estimate_next_context_bytes()
+                    self._set_context_estimated_tokens(
+                        self._estimate_next_context_tokens()
                     )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
@@ -557,8 +556,8 @@ class ComputerUseAgent:
                         parsed_action=parsed_action,
                         include_feedback=True,
                     )
-                    self._set_context_estimated_bytes(
-                        self._estimate_next_context_bytes()
+                    self._set_context_estimated_tokens(
+                        self._estimate_next_context_tokens()
                     )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
@@ -604,8 +603,8 @@ class ComputerUseAgent:
                         parsed_action=parsed_action,
                         include_feedback=False,
                     )
-                    self._set_context_estimated_bytes(
-                        self._estimate_next_context_bytes()
+                    self._set_context_estimated_tokens(
+                        self._estimate_next_context_tokens()
                     )
                     self._notify_runtime_status()
                     self.context_logger.log_event(
@@ -653,8 +652,8 @@ class ComputerUseAgent:
                     parsed_action=parsed_action,
                     include_feedback=True,
                 )
-                self._set_context_estimated_bytes(
-                    self._estimate_next_context_bytes()
+                self._set_context_estimated_tokens(
+                    self._estimate_next_context_tokens()
                 )
                 self._notify_runtime_status()
                 self.context_logger.log_event(
@@ -722,7 +721,7 @@ class ComputerUseAgent:
         """清理当前会话的多轮上下文历史。"""
         self._reset_session_state()
         self.last_usage_total_tokens = None
-        self._set_context_estimated_bytes(0)
+        self._set_context_estimated_tokens(0)
         self._notify_runtime_status()
 
     def close(self) -> None:
@@ -741,7 +740,7 @@ class ComputerUseAgent:
         """重置单次 run 的临时状态。"""
         self.history = []
         self.last_usage_total_tokens = None
-        self._set_context_estimated_bytes(0)
+        self._set_context_estimated_tokens(0)
         self.current_step = 0
         self._runtime_status_note = ''
         self.context_logger = ContextLogger(
@@ -1017,8 +1016,8 @@ class ComputerUseAgent:
             changed = rebuilt_history != self.session_history
             if changed:
                 self.session_history = rebuilt_history
-                self._set_context_estimated_bytes(
-                    self._estimate_next_context_bytes(),
+                self._set_context_estimated_tokens(
+                    self._estimate_next_context_tokens(),
                     suppress_warning=(trigger_reason == 'auto'),
                 )
                 self._notify_runtime_status()
@@ -1071,8 +1070,8 @@ class ComputerUseAgent:
         changed = rebuilt_history != before_items
         self.session_history = rebuilt_history
         self.last_usage_total_tokens = None
-        self._set_context_estimated_bytes(
-            self._estimate_next_context_bytes(),
+        self._set_context_estimated_tokens(
+            self._estimate_next_context_tokens(),
             suppress_warning=(trigger_reason == 'auto'),
         )
         self._notify_runtime_status()
@@ -1089,7 +1088,7 @@ class ComputerUseAgent:
             before_screenshot_count=before_counts.get('screenshot', 0),
             after_screenshot_count=after_counts.get('screenshot', 0),
             persistent_skill_count=after_counts.get('persistent_skill', 0),
-            context_estimated_bytes=self.last_context_estimated_bytes,
+            context_estimated_tokens=self.last_context_estimated_tokens,
         )
         return changed
 
@@ -1104,8 +1103,8 @@ class ComputerUseAgent:
         messages, _, _, _ = self._build_request_messages(
             current_screenshot_item=current_screenshot_item,
         )
-        estimated_bytes = self._estimate_context_bytes(messages)
-        if estimated_bytes <= CONTEXT_COMPACTION_THRESHOLD_BYTES:
+        estimated_tokens = self._estimate_context_tokens(messages)
+        if estimated_tokens <= CONTEXT_COMPACTION_THRESHOLD_TOKENS:
             return
 
         self._compact_session_context(
@@ -1860,8 +1859,8 @@ class ComputerUseAgent:
             ],
         }
 
-    def _estimate_context_bytes(self, messages: List[Dict[str, Any]]) -> int:
-        """估算消息上下文占用字节数，截图统一按固定 token 数计入。"""
+    def _estimate_context_tokens(self, messages: List[Dict[str, Any]]) -> int:
+        """估算消息上下文占用 token 数，文本按字符数近似，截图按固定 token 数计入。"""
         sanitized_messages: List[Dict[str, Any]] = []
         screenshot_count = 0
 
@@ -1885,14 +1884,13 @@ class ComputerUseAgent:
                     sanitized_message[optional_key] = message[optional_key]
             sanitized_messages.append(sanitized_message)
 
-        serialized_bytes = len(
-            json.dumps(sanitized_messages, ensure_ascii=False).encode('utf-8')
-        )
-        screenshot_bytes = screenshot_count * SCREENSHOT_TOKEN_ESTIMATE * TOKEN_ESTIMATE_BYTES
-        return serialized_bytes + screenshot_bytes
+        serialized_text = json.dumps(sanitized_messages, ensure_ascii=False)
+        text_tokens = len(serialized_text)
+        screenshot_tokens = screenshot_count * SCREENSHOT_TOKEN_ESTIMATE
+        return text_tokens + screenshot_tokens
 
-    def _estimate_next_context_bytes(self) -> int:
-        """估算下一轮模型调用会携带的上下文字节数。"""
+    def _estimate_next_context_tokens(self) -> int:
+        """估算下一轮模型调用会携带的上下文 token 数。"""
         placeholder_screenshot_item = self._build_history_item(
             kind='screenshot',
             api_message={
@@ -1912,13 +1910,13 @@ class ComputerUseAgent:
         messages, _, _, _ = self._build_request_messages(
             current_screenshot_item=placeholder_screenshot_item,
         )
-        return self._estimate_context_bytes(messages)
+        return self._estimate_context_tokens(messages)
 
     def _build_runtime_status(self, elapsed_seconds: float) -> Dict[str, Any]:
         """构建供 CLI 状态栏消费的运行时状态。"""
         return {
             'usage_total_tokens': self.last_usage_total_tokens,
-            'context_estimated_bytes': self.last_context_estimated_bytes,
+            'context_estimated_tokens': self.last_context_estimated_tokens,
             'activated_skills': sorted(self.activated_skills),
             'elapsed_seconds': elapsed_seconds,
             'status_note': self._get_runtime_status_note(),
@@ -1931,7 +1929,7 @@ class ComputerUseAgent:
         if (
             self.persistent_session
             and not self._suppress_auto_compact_warning
-            and self.last_context_estimated_bytes > CONTEXT_COMPACTION_WARNING_BYTES
+            and self.last_context_estimated_tokens > CONTEXT_COMPACTION_WARNING_TOKENS
         ):
             return 'Auto compact soon'
         return ''
@@ -2079,19 +2077,19 @@ class ComputerUseAgent:
                 parsed_action,
             )
             self._append_history_item(feedback_message)
-    def _set_context_estimated_bytes(
+    def _set_context_estimated_tokens(
         self,
-        estimated_bytes: int,
+        estimated_tokens: int,
         suppress_warning: bool = False,
     ) -> None:
-        """更新上下文估算值，并维护自动压缩提示抑制状态。"""
-        previous_bytes = self.last_context_estimated_bytes
-        self.last_context_estimated_bytes = estimated_bytes
+        """更新上下文 token 估算值，并维护自动压缩提示抑制状态。"""
+        previous_tokens = self.last_context_estimated_tokens
+        self.last_context_estimated_tokens = estimated_tokens
         if suppress_warning:
             self._suppress_auto_compact_warning = True
             return
         if (
-            estimated_bytes <= CONTEXT_COMPACTION_WARNING_BYTES
-            or estimated_bytes > previous_bytes
+            estimated_tokens <= CONTEXT_COMPACTION_WARNING_TOKENS
+            or estimated_tokens > previous_tokens
         ):
             self._suppress_auto_compact_warning = False

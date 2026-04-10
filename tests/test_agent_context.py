@@ -1197,7 +1197,7 @@ class AgentContextTests(unittest.TestCase):
         self.assertIsNone(model_response['usage'])
         self.assertEqual(model_response['reasoning'], '')
         self.assertIsNone(result['runtime_status']['usage_total_tokens'])
-        self.assertGreater(result['runtime_status']['context_estimated_bytes'], 8000)
+        self.assertGreater(result['runtime_status']['context_estimated_tokens'], 2000)
 
     def test_context_log_verbose_includes_full_messages(self):
         self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
@@ -1352,8 +1352,8 @@ class AgentContextTests(unittest.TestCase):
 
     def test_runtime_status_shows_auto_compact_warning_after_eighty_five_percent(self):
         agent = self._make_agent(persistent_session=True)
-        agent.last_context_estimated_bytes = int(
-            self.agent_module.CONTEXT_WINDOW_BYTES * 0.86
+        agent.last_context_estimated_tokens = int(
+            self.agent_module.CONTEXT_WINDOW_TOKENS * 0.86
         )
 
         runtime_status = agent._build_runtime_status(elapsed_seconds=0.0)
@@ -1472,8 +1472,8 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(status_notes[-1], '')
 
     def test_auto_compaction_runs_before_main_model_call_and_keeps_current_user_instruction(self):
-        original_threshold = self.agent_module.CONTEXT_COMPACTION_THRESHOLD_BYTES
-        self.agent_module.CONTEXT_COMPACTION_THRESHOLD_BYTES = 1
+        original_threshold = self.agent_module.CONTEXT_COMPACTION_THRESHOLD_TOKENS
+        self.agent_module.CONTEXT_COMPACTION_THRESHOLD_TOKENS = 1
         try:
             self.responses[:] = [
                 json.dumps(
@@ -1512,7 +1512,7 @@ class AgentContextTests(unittest.TestCase):
 
             result = agent.run('Fresh task')
         finally:
-            self.agent_module.CONTEXT_COMPACTION_THRESHOLD_BYTES = original_threshold
+            self.agent_module.CONTEXT_COMPACTION_THRESHOLD_TOKENS = original_threshold
 
         self.assertTrue(result['success'])
         self.assertEqual(len(self.calls), 2)
@@ -1599,14 +1599,14 @@ class AgentContextTests(unittest.TestCase):
         ]
         agent.activated_skills = {'open-browser'}
         agent.last_usage_total_tokens = 123
-        agent.last_context_estimated_bytes = 456
+        agent.last_context_estimated_tokens = 456
 
         agent.clear_session_context()
 
         self.assertEqual(agent.session_history, [])
         self.assertEqual(agent.activated_skills, set())
         self.assertIsNone(agent.last_usage_total_tokens)
-        self.assertEqual(agent.last_context_estimated_bytes, 0)
+        self.assertEqual(agent.last_context_estimated_tokens, 0)
 
     def test_screenshot_size_resizes_image_before_model_call(self):
         self.responses[:] = [
