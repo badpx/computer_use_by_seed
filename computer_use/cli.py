@@ -594,6 +594,33 @@ def _ask_user_with_cli(
         )
 
 
+def _build_cli_ask_user_callback(
+    prompt_session=None,
+    active_renderer: Optional[Dict[str, Optional['LiveStatusRenderer']]] = None,
+    eof_confirmation_state: Optional[EofConfirmationState] = None,
+) -> Callable[[str, Optional[list[str]]], str]:
+    """构造供 CLI 模式使用的 ask_user 回调。"""
+    renderer_state = active_renderer or {'renderer': None}
+
+    def ask_user_callback(question: str, options: Optional[list[str]] = None) -> str:
+        renderer = renderer_state['renderer']
+        if renderer is not None:
+            renderer.stop()
+        try:
+            with contextlib.redirect_stdout(sys.__stdout__), contextlib.redirect_stderr(sys.__stderr__):
+                return _ask_user_with_cli(
+                    question=question,
+                    options=options,
+                    prompt_session=prompt_session,
+                    eof_confirmation_state=eof_confirmation_state,
+                )
+        finally:
+            if renderer is not None:
+                renderer.start()
+
+    return ask_user_callback
+
+
 def print_banner():
     """打印欢迎横幅"""
     banner = """
@@ -693,22 +720,11 @@ def interactive_mode(
 
     active_renderer: Dict[str, Optional[LiveStatusRenderer]] = {'renderer': None}
     eof_confirmation_state = EofConfirmationState()
-
-    def ask_user_callback(question: str, options: Optional[list[str]] = None) -> str:
-        renderer = active_renderer['renderer']
-        if renderer is not None:
-            renderer.stop()
-        try:
-            with contextlib.redirect_stdout(sys.__stdout__), contextlib.redirect_stderr(sys.__stderr__):
-                return _ask_user_with_cli(
-                    question=question,
-                    options=options,
-                    prompt_session=prompt_session,
-                    eof_confirmation_state=eof_confirmation_state,
-                )
-        finally:
-            if renderer is not None:
-                renderer.start()
+    ask_user_callback = _build_cli_ask_user_callback(
+        prompt_session=prompt_session,
+        active_renderer=active_renderer,
+        eof_confirmation_state=eof_confirmation_state,
+    )
 
     # 初始化代理
     agent = None
@@ -886,6 +902,16 @@ def single_task_mode(
 
     ensure_supported_python()
     from .agent import ComputerUseAgent
+    ask_user_callback = None
+    if config.enable_ask_user_for_single_task:
+        prompt_session = _create_prompt_session()
+        if verbose and prompt_session is None:
+            print("[提示] 未检测到 prompt_toolkit，回退到基础输入模式")
+            print()
+        ask_user_callback = _build_cli_ask_user_callback(
+            prompt_session=prompt_session,
+            eof_confirmation_state=EofConfirmationState(),
+        )
     
     # 初始化代理
     agent = ComputerUseAgent(
@@ -909,6 +935,7 @@ def single_task_mode(
         verbose=verbose,
         print_init_status=True,
         persistent_session=False,
+        ask_user_callback=ask_user_callback,
     )
 
     # 执行任务
@@ -1203,6 +1230,9 @@ def main():
         if verbose:
             print("\n\n[退出] 用户中断")
         sys.exit(130)
+    except EOFError:
+        print("\n感谢使用，再见！")
+        sys.exit(0)
     except Exception as e:
         if verbose:
             print(f"\n[错误] {e}")

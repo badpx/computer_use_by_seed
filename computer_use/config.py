@@ -110,6 +110,7 @@ class Config:
         'MIN_PIXELS': '78400',     # 100 * 28 * 28
         'SKILLS_DIR': './skills',
         'ENABLE_SKILLS': 'true',
+        'ENABLE_ASK_USER_FOR_SINGLE_TASK': 'false',
     }
     
     # 必需配置项
@@ -361,6 +362,10 @@ class Config:
     @property
     def enable_skills(self) -> bool:
         return self.get_bool('ENABLE_SKILLS', True)
+
+    @property
+    def enable_ask_user_for_single_task(self) -> bool:
+        return self.get_bool('ENABLE_ASK_USER_FOR_SINGLE_TASK', False)
 
     def _detect_natural_scroll(self) -> bool:
         """自动检测系统滚动方向设置。"""

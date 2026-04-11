@@ -809,7 +809,65 @@ class CliPromptTests(unittest.TestCase):
             )
 
         self.assertEqual(len(fake_agent_instances), 1)
-        self.assertNotIn('ask_user_callback', fake_agent_instances[0].kwargs)
+        self.assertIsNone(fake_agent_instances[0].kwargs['ask_user_callback'])
+
+    def test_single_task_mode_passes_ask_user_callback_to_agent_when_enabled_in_config(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                answer = self.kwargs['ask_user_callback']('Should I continue?')
+                return {
+                    'success': True,
+                    'steps': [],
+                    'final_response': f'{instruction}:{answer}',
+                }
+
+            def close(self):
+                return None
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+
+        with mock.patch.object(self.cli, 'ensure_supported_python'), mock.patch.object(
+            self.cli, '_create_prompt_session', return_value=None
+        ), mock.patch.object(
+            type(self.cli.config),
+            'enable_ask_user_for_single_task',
+            new_callable=mock.PropertyMock,
+            return_value=True,
+        ), mock.patch.object(
+            builtins, 'input', side_effect=['继续']
+        ):
+            result = self.cli.single_task_mode(
+                instruction='单次任务',
+                verbose=False,
+            )
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        self.assertTrue(callable(fake_agent_instances[0].kwargs['ask_user_callback']))
+        self.assertEqual(result['final_response'], '单次任务:继续')
+
+    def test_main_exits_cleanly_on_eof_from_single_task_mode(self):
+        output = io.StringIO()
+
+        with redirect_stdout(output), mock.patch.object(
+            self.cli, 'ensure_supported_python'
+        ), mock.patch.object(
+            self.cli, 'single_task_mode', side_effect=EOFError
+        ), mock.patch.object(
+            sys, 'argv', ['computer_use', '单次任务']
+        ):
+            with self.assertRaises(SystemExit) as exc:
+                self.cli.main()
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertIn('感谢使用，再见！', output.getvalue())
 
     def test_ask_user_with_cli_returns_selected_option(self):
         with mock.patch.object(

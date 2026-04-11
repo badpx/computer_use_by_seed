@@ -94,6 +94,9 @@ python -m computer_use
 python -m computer_use "打开浏览器"
 ```
 
+默认情况下，单次任务模式不会向用户发起 `ask_user` 询问。
+如果需要在单次任务中启用 Human-in-the-loop 询问，可在 `.env` 或环境变量中设置 `ENABLE_ASK_USER_FOR_SINGLE_TASK=true`。
+
 ### 常见示例
 
 ```bash
@@ -141,6 +144,7 @@ python -m computer_use "分析页面状态" --verbose
 | 自然滚动 | `NATURAL_SCROLL` | 自动检测 | 是否按系统自然滚动方向解释 `scroll` 动作 |
 | 保存上下文日志 | `SAVE_CONTEXT_LOG` | `true` | 是否保存每任务 JSONL 调试日志 |
 | 日志目录 | `CONTEXT_LOG_DIR` | `./logs` | 上下文日志保存目录 |
+| 单次任务启用询问用户 | `ENABLE_ASK_USER_FOR_SINGLE_TASK` | `false` | 是否允许单次任务模式使用 `ask_user` 能力 |
 
 ### `.env` 示例
 
@@ -160,6 +164,7 @@ MAX_STEPS=100
 NATURAL_SCROLL=
 SAVE_CONTEXT_LOG=true
 CONTEXT_LOG_DIR=./logs
+ENABLE_ASK_USER_FOR_SINGLE_TASK=false
 ```
 
 如果订阅了方舟 Coding Plan，可使用：

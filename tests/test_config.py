@@ -53,6 +53,33 @@ class ConfigDefaultsTests(unittest.TestCase):
             if original_env is not None:
                 os.environ['DEVICE_CONFIG_JSON'] = original_env
 
+    def test_enable_ask_user_for_single_task_defaults_to_false(self):
+        original_env = os.environ.pop('ENABLE_ASK_USER_FOR_SINGLE_TASK', None)
+        original_load_from_file = Config._load_from_file
+        try:
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertFalse(config.enable_ask_user_for_single_task)
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is not None:
+                os.environ['ENABLE_ASK_USER_FOR_SINGLE_TASK'] = original_env
+
+    def test_enable_ask_user_for_single_task_can_be_enabled_from_env(self):
+        original_env = os.environ.get('ENABLE_ASK_USER_FOR_SINGLE_TASK')
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['ENABLE_ASK_USER_FOR_SINGLE_TASK'] = 'true'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertTrue(config.enable_ask_user_for_single_task)
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is None:
+                os.environ.pop('ENABLE_ASK_USER_FOR_SINGLE_TASK', None)
+            else:
+                os.environ['ENABLE_ASK_USER_FOR_SINGLE_TASK'] = original_env
+
 
 if __name__ == '__main__':
     unittest.main()
