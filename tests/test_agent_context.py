@@ -1901,6 +1901,71 @@ class AgentContextTests(unittest.TestCase):
         )
         self.assertEqual(agent.session_history[2]['api_message']['content'], 'Work')
 
+    def test_ask_user_tool_call_reraises_keyboard_interrupt(self):
+        self.responses[:] = [
+            {
+                'content': '',
+                'finish_reason': 'tool_calls',
+                'tool_calls': [
+                    FakeToolCall(
+                        'ask_user',
+                        'tc-ask-1',
+                        arguments=json.dumps(
+                            {'question': 'Which account should I use?'},
+                            ensure_ascii=False,
+                        ),
+                    )
+                ],
+            },
+        ]
+
+        def interrupted_ask_user(question, options=None):
+            del question, options
+            raise KeyboardInterrupt
+
+        agent = self._make_agent(ask_user_callback=interrupted_ask_user)
+
+        with self.assertRaises(KeyboardInterrupt):
+            agent.run('Choose the account')
+
+        user_texts = [
+            item['api_message']['content']
+            for item in agent.session_history
+            if item['api_message']['role'] == 'user'
+            and isinstance(item['api_message'].get('content'), str)
+        ]
+        self.assertEqual(
+            user_texts,
+            ['Choose the account', self.agent_module.USER_INTERRUPT_MESSAGE],
+        )
+
+    def test_ask_user_tool_call_reraises_eof_error(self):
+        self.responses[:] = [
+            {
+                'content': '',
+                'finish_reason': 'tool_calls',
+                'tool_calls': [
+                    FakeToolCall(
+                        'ask_user',
+                        'tc-ask-1',
+                        arguments=json.dumps(
+                            {'question': 'Which account should I use?'},
+                            ensure_ascii=False,
+                        ),
+                    )
+                ],
+            },
+        ]
+
+        def exited_ask_user(question, options=None):
+            del question, options
+            raise EOFError
+
+        agent = self._make_agent(ask_user_callback=exited_ask_user)
+
+        with self.assertRaises(EOFError):
+            agent.run('Choose the account')
+
     def test_ask_user_tool_is_not_registered_without_callback(self):
         self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
 

@@ -319,6 +319,7 @@ class ComputerUseAgent:
         result['context_log_path'] = self.context_logger.current_log_path
         self._notify_runtime_status()
         interrupted = False
+        exited = False
         
         try:
             # 多轮执行循环
@@ -687,6 +688,9 @@ class ComputerUseAgent:
             interrupted = True
             result['error'] = USER_INTERRUPT_MESSAGE
             self._append_user_interrupt_message_once()
+        except EOFError:
+            exited = True
+            result['error'] = 'The current task ended because the user exited while answering ask_user.'
         except Exception as e:
             result['error'] = str(e)
             if self.verbose:
@@ -714,6 +718,8 @@ class ComputerUseAgent:
 
         if interrupted:
             raise KeyboardInterrupt
+        if exited:
+            raise EOFError
         return result
 
     def _reset_session_state(self) -> None:

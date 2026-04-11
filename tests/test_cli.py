@@ -324,6 +324,112 @@ class CliPromptTests(unittest.TestCase):
         self.assertEqual(fake_agent_instances[0].close_calls, 1)
         self.assertEqual(mock_input.call_count, 2)
 
+    def test_interactive_mode_ctrl_c_during_ask_user_cancels_current_task(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.run_calls = []
+                self.clear_calls = 0
+                self.compact_calls = 0
+                self.close_calls = 0
+                self.model = 'fake-model'
+                self.thinking_mode = 'auto'
+                self.reasoning_effort = 'medium'
+                self.skills = []
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                self.run_calls.append(instruction)
+                self.kwargs['ask_user_callback']('Should I continue?')
+                return {'success': True, 'steps': [], 'final_response': 'done'}
+
+            def format_effective_status(self):
+                return '[生效参数]\n  模型: fake-model'
+
+            def clear_session_context(self):
+                self.clear_calls += 1
+
+            def compact_session_context(self, manual=False):
+                self.compact_calls += 1
+                return True
+
+            def close(self):
+                self.close_calls += 1
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+        output = io.StringIO()
+
+        with redirect_stdout(output), mock.patch.object(
+            self.cli, 'ensure_supported_python'
+        ), mock.patch.object(
+            self.cli, '_create_prompt_session', return_value=None
+        ), mock.patch.object(
+            builtins, 'input', side_effect=['打开计算器', KeyboardInterrupt, '/exit']
+        ):
+            self.cli.interactive_mode(verbose=False)
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        self.assertEqual(fake_agent_instances[0].run_calls, ['打开计算器'])
+        self.assertEqual(fake_agent_instances[0].close_calls, 1)
+        self.assertIn('[中断] 用户取消操作', output.getvalue())
+
+    def test_interactive_mode_ctrl_d_during_ask_user_exits(self):
+        fake_agent_instances = []
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.run_calls = []
+                self.clear_calls = 0
+                self.compact_calls = 0
+                self.close_calls = 0
+                self.model = 'fake-model'
+                self.thinking_mode = 'auto'
+                self.reasoning_effort = 'medium'
+                self.skills = []
+                fake_agent_instances.append(self)
+
+            def run(self, instruction):
+                self.run_calls.append(instruction)
+                self.kwargs['ask_user_callback']('Should I continue?')
+                return {'success': True, 'steps': [], 'final_response': 'done'}
+
+            def format_effective_status(self):
+                return '[生效参数]\n  模型: fake-model'
+
+            def clear_session_context(self):
+                self.clear_calls += 1
+
+            def compact_session_context(self, manual=False):
+                self.compact_calls += 1
+                return True
+
+            def close(self):
+                self.close_calls += 1
+
+        fake_agent_module = types.ModuleType('computer_use.agent')
+        fake_agent_module.ComputerUseAgent = FakeAgent
+        sys.modules['computer_use.agent'] = fake_agent_module
+        output = io.StringIO()
+
+        with redirect_stdout(output), mock.patch.object(
+            self.cli, 'ensure_supported_python'
+        ), mock.patch.object(
+            self.cli, '_create_prompt_session', return_value=None
+        ), mock.patch.object(
+            builtins, 'input', side_effect=['打开计算器', EOFError]
+        ):
+            self.cli.interactive_mode(verbose=False)
+
+        self.assertEqual(len(fake_agent_instances), 1)
+        self.assertEqual(fake_agent_instances[0].run_calls, ['打开计算器'])
+        self.assertEqual(fake_agent_instances[0].close_calls, 1)
+        self.assertIn('感谢使用，再见！', output.getvalue())
+
     def test_interactive_mode_updates_status_bar_after_task(self):
         fake_agent_instances = []
 
