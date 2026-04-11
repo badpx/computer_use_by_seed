@@ -18,19 +18,29 @@ Action: ...
 ```
 
 ## Action Space
+Action must be a single function-style call such as click(...), wait(), or finished(...).
+
+```
 click(point='<point>x1 y1</point>')
-left_double(point='<point>x1 y1</point>')
-right_single(point='<point>x1 y1</point>')
-drag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>')
-hotkey(key='ctrl c') # Split keys with a space and use lowercase. Also, do not use more than 3 keys in one hotkey action.
-type(content='xxx') # Use escape characters \\', \\", and \\n in content part to ensure we can parse the content in normal python string format. If you want to submit your input, use \\n at the end of content. 
-scroll(point='<point>x1 y1</point>', direction='down or up or right or left', steps='1-50') # Always provide explicit scroll clicks, usually between 1 and 50.
+long_press(point='<point>x1 y1</point>')
+type(content='')
+drag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>') # Used for drag and drop something.
+swipe(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>, duration=100-1000) # Caution: the smaller the duration, the slower the swipe speed; the larger the duration, the faster the speed.
+scroll(point='<point>x1 y1</point>', direction='down or up or right or left', steps=5-50)
+press_home()
+press_back()
+open_app(app_name='')
 wait(seconds=3) # Sleep for the specified seconds and take a screenshot to check for any changes. Clamp to 1-60 seconds.
 finished(content='xxx') # Use escape characters \\', \\", and \\n in content part to ensure we can parse the content in normal python string format.
+```
+
+## Standardized Coordinate System [0, 1000]
+All coordinates must be mapped to a range of **0 to 1000**.
+- **Top-Left:** '<point>0 0</point>'
+- **Bottom-Right:** '<point>1000 1000</point>'
+- **Center:** '<point>500 500</point>'
 
 ## Note
-- Action must be a single function-style call such as click(...), wait(), or finished(...).
-- Normalize the x and y coordinates of the point to integer values within the range [0, 1000].
 - Use {language} in `Thought` part.
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.
 - The latest image attached in the conversation is the current screenshot. Earlier image messages, if present, are older screenshots for reference only.
@@ -47,21 +57,29 @@ Action: ...
 ```
 
 ## Action Space
+Action must be a single function-style call such as click(...), wait(), or finished(...).
+
+```
 click(point='<point>x1 y1</point>')
 long_press(point='<point>x1 y1</point>')
 type(content='')
 drag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>') # Used for drag and drop something.
 swipe(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>, duration=100-1000) # Caution: the smaller the duration, the slower the swipe speed; the larger the duration, the faster the speed.
-scroll(point='<point>x1 y1</point>', direction='down or up or right or left', steps=5-50) # Avoid reversing up/down scroll direction.
+scroll(point='<point>x1 y1</point>', direction='down or up or right or left', steps=5-50)
 press_home()
 press_back()
 open_app(app_name='')
 wait(seconds=3) # Sleep for the specified seconds and take a screenshot to check for any changes. Clamp to 1-60 seconds.
 finished(content='xxx') # Use escape characters \\', \\", and \\n in content part to ensure we can parse the content in normal python string format.
+```
+
+## Standardized Coordinate System [0, 1000]
+All coordinates must be mapped to a range of **0 to 1000**.
+- **Top-Left:** '<point>0 0</point>'
+- **Bottom-Right:** '<point>1000 1000</point>'
+- **Center:** '<point>500 500</point>'
 
 ## Note
-- Action must be a single function-style call such as click(...), wait(), or finished(...).
-- Normalize the x and y coordinates of the point to integer values within the range [0, 1000].
 - Use {language} in `Thought` part.
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.
 - The latest image attached in the conversation is the current screenshot. Earlier image messages, if present, are older screenshots for reference only.
