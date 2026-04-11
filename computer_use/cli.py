@@ -30,6 +30,26 @@ def _parse_device_config_json(raw_json: str) -> Dict[str, Any]:
     return payload
 
 
+@dataclass
+class EofConfirmationState:
+    """管理交互式输入中的 Ctrl+D 二次确认退出。"""
+
+    pending_confirmation: bool = False
+    warning_message: str = '[提示] 再按一次 Ctrl+D 将退出'
+
+    def confirm_or_raise(self) -> None:
+        """首次 EOF 给出提示，连续第二次 EOF 才真正退出。"""
+        if self.pending_confirmation:
+            raise EOFError
+        self.pending_confirmation = True
+        print()
+        print(self.warning_message)
+
+    def reset(self) -> None:
+        """在用户继续输入后清空退出确认状态。"""
+        self.pending_confirmation = False
+
+
 class InteractiveStatusBar:
     """交互模式输入栏底部状态栏。"""
 
@@ -500,30 +520,47 @@ def _read_instruction(
     prompt_text: str = '> ',
     bottom_toolbar=None,
     completer=None,
+    eof_confirmation_state: Optional[EofConfirmationState] = None,
 ) -> str:
     """从 prompt_toolkit 或内建 input 读取用户指令。"""
-    if prompt_session is not None:
-        return prompt_session.prompt(
-            prompt_text,
-            bottom_toolbar=bottom_toolbar,
-            completer=completer,
-            complete_while_typing=completer is not None,
-        ).strip()
+    while True:
+        try:
+            if prompt_session is not None:
+                instruction = prompt_session.prompt(
+                    prompt_text,
+                    bottom_toolbar=bottom_toolbar,
+                    completer=completer,
+                    complete_while_typing=completer is not None,
+                ).strip()
+            else:
+                instruction = input(prompt_text).strip()
+        except EOFError:
+            if eof_confirmation_state is None:
+                raise
+            eof_confirmation_state.confirm_or_raise()
+            continue
 
-    return input(prompt_text).strip()
+        if eof_confirmation_state is not None:
+            eof_confirmation_state.reset()
+        return instruction
 
 
 def _ask_user_with_cli(
     question: str,
     options: Optional[list[str]] = None,
     prompt_session=None,
+    eof_confirmation_state: Optional[EofConfirmationState] = None,
 ) -> str:
     """在 CLI 中向用户提问并返回最终回答文本。"""
     print()
     print(f'[需要用户确认] {question}')
 
     if not options:
-        return _read_instruction(prompt_session, prompt_text='? ')
+        return _read_instruction(
+            prompt_session,
+            prompt_text='? ',
+            eof_confirmation_state=eof_confirmation_state,
+        )
 
     display_options = [str(option).strip() for option in options if str(option).strip()]
     display_options.append('Other')
@@ -534,6 +571,7 @@ def _ask_user_with_cli(
         selected = _read_instruction(
             prompt_session,
             prompt_text='? ',
+            eof_confirmation_state=eof_confirmation_state,
         )
         try:
             selected_index = int(selected)
@@ -549,7 +587,11 @@ def _ask_user_with_cli(
         if chosen_option != 'Other':
             return chosen_option
 
-        return _read_instruction(prompt_session, prompt_text='> ')
+        return _read_instruction(
+            prompt_session,
+            prompt_text='> ',
+            eof_confirmation_state=eof_confirmation_state,
+        )
 
 
 def print_banner():
@@ -650,6 +692,7 @@ def interactive_mode(
         print()
 
     active_renderer: Dict[str, Optional[LiveStatusRenderer]] = {'renderer': None}
+    eof_confirmation_state = EofConfirmationState()
 
     def ask_user_callback(question: str, options: Optional[list[str]] = None) -> str:
         renderer = active_renderer['renderer']
@@ -661,6 +704,7 @@ def interactive_mode(
                     question=question,
                     options=options,
                     prompt_session=prompt_session,
+                    eof_confirmation_state=eof_confirmation_state,
                 )
         finally:
             if renderer is not None:
@@ -718,6 +762,7 @@ def interactive_mode(
                     prompt_session,
                     bottom_toolbar=status_bar.render if status_bar is not None else None,
                     completer=command_completer,
+                    eof_confirmation_state=eof_confirmation_state,
                 )
                 
                 if _dispatch_interactive_command(

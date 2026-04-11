@@ -421,7 +421,7 @@ class CliPromptTests(unittest.TestCase):
         ), mock.patch.object(
             self.cli, '_create_prompt_session', return_value=None
         ), mock.patch.object(
-            builtins, 'input', side_effect=['打开计算器', EOFError]
+            builtins, 'input', side_effect=['打开计算器', EOFError, EOFError]
         ):
             self.cli.interactive_mode(verbose=False)
 
@@ -539,7 +539,7 @@ class CliPromptTests(unittest.TestCase):
         self.assertEqual(status_bar._format_elapsed_time(3600), '1h00m')
         self.assertEqual(status_bar._format_elapsed_time(7260), '2h01m')
 
-    def test_interactive_mode_exits_on_ctrl_d_with_prompt_toolkit(self):
+    def test_interactive_mode_exits_on_double_ctrl_d_with_prompt_toolkit(self):
         fake_agent_instances = []
 
         class FakeAgent:
@@ -583,9 +583,10 @@ class CliPromptTests(unittest.TestCase):
 
         self.assertEqual(len(fake_agent_instances), 1)
         self.assertEqual(fake_agent_instances[0].run_calls, [])
+        self.assertIn('再按一次 Ctrl+D 将退出', output.getvalue())
         self.assertIn('感谢使用，再见！', output.getvalue())
 
-    def test_interactive_mode_exits_on_ctrl_d_with_builtin_input(self):
+    def test_interactive_mode_exits_on_double_ctrl_d_with_builtin_input(self):
         fake_agent_instances = []
 
         class FakeAgent:
@@ -624,12 +625,13 @@ class CliPromptTests(unittest.TestCase):
         ), mock.patch.object(
             self.cli, '_create_prompt_session', return_value=None
         ), mock.patch.object(
-            builtins, 'input', side_effect=EOFError
+            builtins, 'input', side_effect=[EOFError, EOFError]
         ):
             self.cli.interactive_mode(verbose=False)
 
         self.assertEqual(len(fake_agent_instances), 1)
         self.assertEqual(fake_agent_instances[0].run_calls, [])
+        self.assertIn('再按一次 Ctrl+D 将退出', output.getvalue())
         self.assertIn('感谢使用，再见！', output.getvalue())
 
     def test_single_task_mode_passes_context_window_options_to_agent(self):
@@ -836,6 +838,45 @@ class CliPromptTests(unittest.TestCase):
             )
 
         self.assertEqual(answer, '自定义回答')
+
+    def test_ask_user_with_cli_requires_second_ctrl_d_to_exit(self):
+        output = io.StringIO()
+
+        with redirect_stdout(output), mock.patch.object(
+            builtins,
+            'input',
+            side_effect=[EOFError, '继续'],
+        ):
+            answer = self.cli._ask_user_with_cli(
+                question='Should I continue?',
+                prompt_session=None,
+                eof_confirmation_state=self.cli.EofConfirmationState(),
+            )
+
+        self.assertEqual(answer, '继续')
+        self.assertIn('再按一次 Ctrl+D 将退出', output.getvalue())
+
+    def test_read_instruction_resets_eof_confirmation_after_successful_input(self):
+        output = io.StringIO()
+        eof_confirmation_state = self.cli.EofConfirmationState()
+
+        with redirect_stdout(output), mock.patch.object(
+            builtins,
+            'input',
+            side_effect=[EOFError, '继续', EOFError, EOFError],
+        ):
+            first_value = self.cli._read_instruction(
+                prompt_session=None,
+                eof_confirmation_state=eof_confirmation_state,
+            )
+            with self.assertRaises(EOFError):
+                self.cli._read_instruction(
+                    prompt_session=None,
+                    eof_confirmation_state=eof_confirmation_state,
+                )
+
+        self.assertEqual(first_value, '继续')
+        self.assertEqual(output.getvalue().count('再按一次 Ctrl+D 将退出'), 2)
 
     def test_interactive_mode_handles_status_command_without_running_agent(self):
         fake_agent_instances = []
