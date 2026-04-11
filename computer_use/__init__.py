@@ -2,6 +2,8 @@
 Computer Use Tool - 本地 GUI 自动化工具
 """
 
+import importlib
+
 from .config import config, Config
 from .compat import ensure_supported_python
 
@@ -10,6 +12,10 @@ __author__ = 'Computer Use Tool'
 
 
 def __getattr__(name):
+    if name == 'devices':
+        devices_module = importlib.import_module('.devices', __name__)
+        globals()['devices'] = devices_module
+        return devices_module
     if name == 'ComputerUseAgent':
         ensure_supported_python()
         from .agent import ComputerUseAgent
@@ -54,6 +60,9 @@ __all__ = [
 
     # 核心类
     'ComputerUseAgent',
+
+    # 子包
+    'devices',
 
     # 截图
     'capture_screenshot',
