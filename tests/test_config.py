@@ -50,6 +50,36 @@ class ConfigDefaultsTests(unittest.TestCase):
             else:
                 os.environ['PROVIDER'] = original_env
 
+    def test_provider_accepts_openai(self):
+        original_env = os.environ.get('PROVIDER')
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['PROVIDER'] = 'openai'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.provider, 'openai')
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is None:
+                os.environ.pop('PROVIDER', None)
+            else:
+                os.environ['PROVIDER'] = original_env
+
+    def test_provider_accepts_ollama(self):
+        original_env = os.environ.get('PROVIDER')
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['PROVIDER'] = 'ollama'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.provider, 'ollama')
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is None:
+                os.environ.pop('PROVIDER', None)
+            else:
+                os.environ['PROVIDER'] = original_env
+
     def test_model_reads_from_neutral_name(self):
         original_env = os.environ.get('MODEL')
         original_legacy = os.environ.pop('ARK_MODEL', None)
@@ -85,6 +115,81 @@ class ConfigDefaultsTests(unittest.TestCase):
                 os.environ['BASE_URL'] = original_env
             if original_legacy is not None:
                 os.environ['ARK_BASE_URL'] = original_legacy
+
+    def test_base_url_defaults_to_provider_specific_openrouter_endpoint(self):
+        original_provider = os.environ.get('PROVIDER')
+        original_base_url = os.environ.pop('BASE_URL', None)
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['PROVIDER'] = 'openrouter'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.base_url, 'https://openrouter.ai/api/v1')
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_provider is None:
+                os.environ.pop('PROVIDER', None)
+            else:
+                os.environ['PROVIDER'] = original_provider
+            if original_base_url is not None:
+                os.environ['BASE_URL'] = original_base_url
+
+    def test_base_url_defaults_to_provider_specific_openai_endpoint(self):
+        original_provider = os.environ.get('PROVIDER')
+        original_base_url = os.environ.pop('BASE_URL', None)
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['PROVIDER'] = 'openai'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.base_url, 'https://api.openai.com/v1')
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_provider is None:
+                os.environ.pop('PROVIDER', None)
+            else:
+                os.environ['PROVIDER'] = original_provider
+            if original_base_url is not None:
+                os.environ['BASE_URL'] = original_base_url
+
+    def test_base_url_defaults_to_provider_specific_ollama_endpoint(self):
+        original_provider = os.environ.get('PROVIDER')
+        original_base_url = os.environ.pop('BASE_URL', None)
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['PROVIDER'] = 'ollama'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.base_url, 'http://localhost:11434/v1')
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_provider is None:
+                os.environ.pop('PROVIDER', None)
+            else:
+                os.environ['PROVIDER'] = original_provider
+            if original_base_url is not None:
+                os.environ['BASE_URL'] = original_base_url
+
+    def test_explicit_base_url_overrides_provider_specific_default(self):
+        original_provider = os.environ.get('PROVIDER')
+        original_base_url = os.environ.get('BASE_URL')
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['PROVIDER'] = 'openai'
+            os.environ['BASE_URL'] = 'https://custom.example/v1'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertEqual(config.base_url, 'https://custom.example/v1')
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_provider is None:
+                os.environ.pop('PROVIDER', None)
+            else:
+                os.environ['PROVIDER'] = original_provider
+            if original_base_url is None:
+                os.environ.pop('BASE_URL', None)
+            else:
+                os.environ['BASE_URL'] = original_base_url
 
     def test_max_steps_defaults_to_one_hundred(self):
         original_env = os.environ.pop('MAX_STEPS', None)

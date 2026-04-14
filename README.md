@@ -131,7 +131,7 @@ python -m computer_use "分析页面状态" --verbose
 | API 密钥 | `API_KEY` | - | 必需，模型服务 API 密钥 |
 | Provider | `PROVIDER` | `ark` | 当前 provider profile |
 | 模型名称 | `MODEL` | `doubao-seed-1-6-vision-250815` | 使用的模型 |
-| API 地址 | `BASE_URL` | `http://ark.cn-beijing.volces.com/api/v3` | API 基础 URL |
+| API 地址 | `BASE_URL` | 按 provider 取默认值 | API 基础 URL |
 | Provider 配置 | `PROVIDER_CONFIG_JSON` | - | provider 私有 JSON 配置，例如 OpenRouter headers |
 | 设备插件 | `DEVICE_NAME` | `local` | 当前设备适配器 |
 | 设备配置 | `DEVICE_CONFIG_JSON` | - | 设备插件私有 JSON 配置 |
@@ -190,6 +190,33 @@ PROVIDER_CONFIG_JSON={"http_referer":"https://your-app.example","title":"Compute
 
 - `http_referer` -> `HTTP-Referer`
 - `title` -> `X-OpenRouter-Title`
+
+如果使用 OpenAI，可使用：
+
+```bash
+API_KEY=your_api_key_here
+PROVIDER=openai
+BASE_URL=https://api.openai.com/v1
+MODEL=gpt-4o-mini
+PROVIDER_CONFIG_JSON=
+```
+
+如果使用 Ollama，可使用：
+
+```bash
+API_KEY=ollama
+PROVIDER=ollama
+BASE_URL=http://localhost:11434/v1
+MODEL=qwen2.5vl:latest
+PROVIDER_CONFIG_JSON=
+```
+
+Ollama 说明：
+
+- `MODEL` 需要你根据本地已安装模型自行配置
+- 模型上下文窗口和 `max_tokens` 也需要按具体模型能力自行配置
+- `THINKING_MODE=enabled/disabled` 会映射为请求体中的 `thinking={"type":"enabled"}` / `thinking={"type":"disabled"}`
+- `REASONING_EFFORT` 当前不会传给 Ollama provider
 
 ## 设备插件
 

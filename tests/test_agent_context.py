@@ -38,7 +38,7 @@ class FakeToolCall:
 
 
 class FakeResponse:
-    def __init__(self, content, usage=None, reasoning_content=None,
+    def __init__(self, content, usage=None, reasoning_content=None, reasoning=None,
                  finish_reason='stop', tool_calls=None):
         serialised_tool_calls = None
         if tool_calls:
@@ -55,6 +55,7 @@ class FakeResponse:
         message = types.SimpleNamespace(
             content=content,
             reasoning_content=reasoning_content,
+            reasoning=reasoning,
             tool_calls=tool_calls,
         )
         message.model_dump = lambda: {
@@ -84,6 +85,7 @@ class FakeCompletionAPI:
                 item.get('content', ''),
                 usage=item.get('usage'),
                 reasoning_content=item.get('reasoning_content'),
+                reasoning=item.get('reasoning'),
                 finish_reason=item.get('finish_reason', 'stop'),
                 tool_calls=item.get('tool_calls'),
             )
@@ -93,6 +95,7 @@ class FakeCompletionAPI:
 class FakeLlmClient:
     def __init__(self, responses, calls):
         self._api = FakeCompletionAPI(responses, calls)
+        self.reasoning_field_name = 'reasoning_content'
 
     def create_chat_completion(self, **kwargs):
         request = {
@@ -574,6 +577,21 @@ class AgentContextTests(unittest.TestCase):
 
         agent = self._make_agent()
         result = agent.run('Finish via reasoning fallback')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['final_response'], 'ok')
+
+    def test_run_uses_provider_specific_reasoning_field_when_configured(self):
+        self.responses[:] = [
+            {
+                'content': '',
+                'reasoning': "Thought: done\nAction: finished(content='ok')",
+            }
+        ]
+
+        agent = self._make_agent()
+        agent.llm_client.reasoning_field_name = 'reasoning'
+        result = agent.run('Finish via provider-specific reasoning fallback')
 
         self.assertTrue(result['success'])
         self.assertEqual(result['final_response'], 'ok')

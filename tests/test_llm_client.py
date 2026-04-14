@@ -134,6 +134,42 @@ class OpenAiLlmAdapterTests(unittest.TestCase):
         self.assertEqual(chat_client.provider, 'openrouter')
         self.assertIs(chat_client.sdk_client, openai_client)
 
+    def test_create_llm_client_supports_openai_provider(self):
+        from computer_use.llm.factory import create_llm_client
+
+        openai_client = mock.Mock()
+        with mock.patch(
+            'computer_use.llm.openai_adapter.OpenAI',
+            return_value=openai_client,
+        ):
+            chat_client = create_llm_client(
+                provider='openai',
+                api_key='test-key',
+                base_url='https://api.openai.com/v1',
+                provider_config={},
+            )
+
+        self.assertEqual(chat_client.provider, 'openai')
+        self.assertIs(chat_client.sdk_client, openai_client)
+
+    def test_create_llm_client_supports_ollama_provider(self):
+        from computer_use.llm.factory import create_llm_client
+
+        openai_client = mock.Mock()
+        with mock.patch(
+            'computer_use.llm.openai_adapter.OpenAI',
+            return_value=openai_client,
+        ):
+            chat_client = create_llm_client(
+                provider='ollama',
+                api_key='test-key',
+                base_url='http://localhost:11434/v1',
+                provider_config={},
+            )
+
+        self.assertEqual(chat_client.provider, 'ollama')
+        self.assertIs(chat_client.sdk_client, openai_client)
+
     def test_openrouter_profile_builds_recommended_headers_from_provider_config(self):
         from computer_use.llm.openai_adapter import OpenAiChatClient
 
@@ -162,6 +198,82 @@ class OpenAiLlmAdapterTests(unittest.TestCase):
                 'HTTP-Referer': 'https://example.com/app',
                 'X-OpenRouter-Title': 'Computer Use Tool',
             },
+        )
+
+    def test_ollama_profile_maps_enabled_thinking_to_enabled_payload(self):
+        from computer_use.llm.openai_adapter import OpenAiChatClient
+
+        sdk_client = mock.Mock()
+        sdk_client.chat.completions.create.return_value = object()
+        client = OpenAiChatClient(
+            sdk_client=sdk_client,
+            provider='ollama',
+            provider_config={},
+        )
+
+        client.create_chat_completion(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.1,
+            thinking_mode='enabled',
+            reasoning_effort='high',
+        )
+
+        sdk_client.chat.completions.create.assert_called_once_with(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.1,
+            extra_body={'thinking': {'type': 'enabled'}},
+        )
+
+    def test_ollama_profile_maps_disabled_thinking_to_disabled_payload(self):
+        from computer_use.llm.openai_adapter import OpenAiChatClient
+
+        sdk_client = mock.Mock()
+        sdk_client.chat.completions.create.return_value = object()
+        client = OpenAiChatClient(
+            sdk_client=sdk_client,
+            provider='ollama',
+            provider_config={},
+        )
+
+        client.create_chat_completion(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.1,
+            thinking_mode='disabled',
+        )
+
+        sdk_client.chat.completions.create.assert_called_once_with(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.1,
+            extra_body={'thinking': {'type': 'disabled'}},
+        )
+
+    def test_ollama_profile_omits_auto_thinking_and_reasoning_effort(self):
+        from computer_use.llm.openai_adapter import OpenAiChatClient
+
+        sdk_client = mock.Mock()
+        sdk_client.chat.completions.create.return_value = object()
+        client = OpenAiChatClient(
+            sdk_client=sdk_client,
+            provider='ollama',
+            provider_config={},
+        )
+
+        client.create_chat_completion(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.1,
+            thinking_mode='auto',
+            reasoning_effort='high',
+        )
+
+        sdk_client.chat.completions.create.assert_called_once_with(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.1,
         )
 
 
@@ -208,6 +320,7 @@ class AgentUsesLlmAdapterTests(unittest.TestCase):
 
         fake_llm_client = mock.Mock()
         fake_llm_client.create_chat_completion.return_value = fake_response
+        fake_llm_client.reasoning_field_name = 'reasoning_content'
 
         with mock.patch.dict(
             __import__('os').environ,
@@ -240,6 +353,7 @@ class ProviderRegistryTests(unittest.TestCase):
         profile = get_provider_profile('ark')
 
         self.assertEqual(profile.name, 'ark')
+        self.assertEqual(profile.reasoning_field_name, 'reasoning_content')
         self.assertEqual(
             profile.build_extra_body(
                 thinking_mode='enabled',
@@ -264,9 +378,74 @@ class ProviderRegistryTests(unittest.TestCase):
         profile = get_provider_profile('openrouter')
 
         self.assertEqual(profile.name, 'openrouter')
+        self.assertEqual(profile.reasoning_field_name, 'reasoning')
         self.assertEqual(
             profile.build_extra_body(
                 thinking_mode='enabled',
+                reasoning_effort='high',
+                provider_config={},
+            ),
+            {},
+        )
+        self.assertEqual(
+            profile.build_extra_headers(
+                thinking_mode='enabled',
+                reasoning_effort='high',
+                provider_config={},
+            ),
+            {},
+        )
+
+    def test_get_provider_profile_returns_registered_openai_profile(self):
+        from computer_use.llm.providers import get_provider_profile
+
+        profile = get_provider_profile('openai')
+
+        self.assertEqual(profile.name, 'openai')
+        self.assertEqual(profile.reasoning_field_name, 'reasoning')
+        self.assertEqual(
+            profile.build_extra_body(
+                thinking_mode='enabled',
+                reasoning_effort='high',
+                provider_config={},
+            ),
+            {},
+        )
+        self.assertEqual(
+            profile.build_extra_headers(
+                thinking_mode='enabled',
+                reasoning_effort='high',
+                provider_config={},
+            ),
+            {},
+        )
+
+    def test_get_provider_profile_returns_registered_ollama_profile(self):
+        from computer_use.llm.providers import get_provider_profile
+
+        profile = get_provider_profile('ollama')
+
+        self.assertEqual(profile.name, 'ollama')
+        self.assertEqual(profile.reasoning_field_name, 'reasoning')
+        self.assertEqual(
+            profile.build_extra_body(
+                thinking_mode='enabled',
+                reasoning_effort='high',
+                provider_config={},
+            ),
+            {'thinking': {'type': 'enabled'}},
+        )
+        self.assertEqual(
+            profile.build_extra_body(
+                thinking_mode='disabled',
+                reasoning_effort='high',
+                provider_config={},
+            ),
+            {'thinking': {'type': 'disabled'}},
+        )
+        self.assertEqual(
+            profile.build_extra_body(
+                thinking_mode='auto',
                 reasoning_effort='high',
                 provider_config={},
             ),

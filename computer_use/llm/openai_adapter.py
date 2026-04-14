@@ -26,6 +26,7 @@ class OpenAiChatClient:
         self.provider = provider
         self.provider_profile = provider_profile or get_provider_profile(provider)
         self.provider_config = dict(provider_config or {})
+        self.reasoning_field_name = self.provider_profile.reasoning_field_name
 
     def create_chat_completion(
         self,

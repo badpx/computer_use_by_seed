@@ -1569,7 +1569,7 @@ class ComputerUseAgent:
         )
 
     def _extract_response_text(self, response_obj: Any) -> str:
-        """提取模型可解析文本，优先 content，缺失时回退 reasoning_content。"""
+        """提取模型可解析文本，优先 content，缺失时回退 provider-specific reasoning。"""
         content = self._extract_message_content(response_obj)
         if content.strip():
             return content
@@ -1596,7 +1596,7 @@ class ComputerUseAgent:
         return ''
 
     def _extract_reasoning_content(self, response_obj: Any) -> str:
-        """提取模型 message.reasoning_content 原文。"""
+        """提取模型 message 上 provider-specific 的思考字段原文。"""
         message = None
         choices = getattr(response_obj, 'choices', None) or []
         if choices:
@@ -1604,7 +1604,8 @@ class ComputerUseAgent:
         if message is None:
             return ''
 
-        reasoning_content = getattr(message, 'reasoning_content', None)
+        field_name = getattr(self.llm_client, 'reasoning_field_name', 'reasoning')
+        reasoning_content = getattr(message, field_name, None)
         if isinstance(reasoning_content, str):
             return reasoning_content
 

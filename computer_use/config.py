@@ -13,7 +13,13 @@ from pathlib import Path
 THINKING_MODES = ('enabled', 'disabled', 'auto')
 REASONING_EFFORTS = ('low', 'medium', 'high')
 COORDINATE_SPACES = ('relative', 'pixel')
-PROVIDERS = ('ark', 'openrouter')
+PROVIDERS = ('ark', 'openrouter', 'openai', 'ollama')
+PROVIDER_DEFAULT_BASE_URLS = {
+    'ark': 'http://ark.cn-beijing.volces.com/api/v3',
+    'openrouter': 'https://openrouter.ai/api/v1',
+    'openai': 'https://api.openai.com/v1',
+    'ollama': 'http://localhost:11434/v1',
+}
 
 
 def normalize_thinking_mode(
@@ -102,7 +108,7 @@ class Config:
     DEFAULTS = {
         'PROVIDER': 'ark',
         'MODEL': 'doubao-seed-1-6-vision-250815',
-        'BASE_URL': 'http://ark.cn-beijing.volces.com/api/v3',
+        'BASE_URL': PROVIDER_DEFAULT_BASE_URLS['ark'],
         'PROVIDER_CONFIG_JSON': '',
         'DEVICE_NAME': 'local',
         'DEVICE_CONFIG_JSON': '',
@@ -304,7 +310,12 @@ class Config:
     @property
     def base_url(self) -> str:
         """API 基础 URL"""
-        return self._config.get('BASE_URL', self.DEFAULTS['BASE_URL'])
+        if self.has_explicit_value('BASE_URL'):
+            return self._config.get('BASE_URL', self.DEFAULTS['BASE_URL'])
+        return PROVIDER_DEFAULT_BASE_URLS.get(
+            self.provider,
+            self.DEFAULTS['BASE_URL'],
+        )
     
     @property
     def temperature(self) -> float:

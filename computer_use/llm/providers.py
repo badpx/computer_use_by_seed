@@ -11,6 +11,7 @@ class ProviderProfile:
     """Provider-specific request translation hooks."""
 
     name: str
+    reasoning_field_name: str = 'reasoning'
 
     def build_extra_body(
         self,
@@ -36,6 +37,7 @@ class ArkProviderProfile(ProviderProfile):
     """Ark-specific OpenAI-compatible request translation."""
 
     name: str = 'ark'
+    reasoning_field_name: str = 'reasoning_content'
 
     def build_extra_body(
         self,
@@ -78,9 +80,37 @@ class OpenRouterProviderProfile(ProviderProfile):
         return headers
 
 
+@dataclass(frozen=True)
+class OpenAIProviderProfile(ProviderProfile):
+    """OpenAI request translation."""
+
+    name: str = 'openai'
+
+
+@dataclass(frozen=True)
+class OllamaProviderProfile(ProviderProfile):
+    """Ollama request translation."""
+
+    name: str = 'ollama'
+
+    def build_extra_body(
+        self,
+        *,
+        thinking_mode: Optional[str],
+        reasoning_effort: Optional[str],
+        provider_config: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        del reasoning_effort, provider_config
+        if thinking_mode in ('enabled', 'disabled'):
+            return {'thinking': {'type': thinking_mode}}
+        return {}
+
+
 _PROVIDER_PROFILES: Dict[str, ProviderProfile] = {
     'ark': ArkProviderProfile(),
     'openrouter': OpenRouterProviderProfile(),
+    'openai': OpenAIProviderProfile(),
+    'ollama': OllamaProviderProfile(),
 }
 
 
