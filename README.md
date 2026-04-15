@@ -133,6 +133,7 @@ python -m computer_use "分析页面状态" --verbose
 | 模型名称 | `MODEL` | `doubao-seed-1-6-vision-250815` | 使用的模型 |
 | API 地址 | `BASE_URL` | 按 provider 取默认值 | API 基础 URL |
 | Provider 配置 | `PROVIDER_CONFIG_JSON` | - | provider 私有 JSON 配置，例如 OpenRouter headers |
+| 流式响应 | `STREAM` | - | 是否向模型调用显式传入 `stream=true/false`；未配置时不传 |
 | 设备插件 | `DEVICE_NAME` | `local` | 当前设备适配器 |
 | 设备配置 | `DEVICE_CONFIG_JSON` | - | 设备插件私有 JSON 配置 |
 | 目标显示器 | `DISPLAY_INDEX` | `0` | 仅对支持目标切换的设备生效；`local` 会把它解释为显示器编号 |
@@ -153,6 +154,7 @@ PROVIDER=ark
 BASE_URL=http://ark.cn-beijing.volces.com/api/v3
 MODEL=doubao-seed-1-6-vision-250815
 PROVIDER_CONFIG_JSON=
+STREAM=
 DEVICE_NAME=local
 DEVICE_CONFIG_JSON=
 DEVICES_DIR=./devices
@@ -280,6 +282,7 @@ python -m computer_use [指令] [选项]
 | `--max-steps` | `-s` | 指定最大执行步数 |
 | `--thinking <mode>` | `-t` | 设置思考模式，取值 `enabled` / `disabled` / `auto` |
 | `--reasoning-effort <level>` | `-r` | 设置思考档位，取值 `low` / `medium` / `high` |
+| `--stream` / `--no-stream` | - | 显式启用或禁用模型调用的 `stream` 参数 |
 | `--coordinate-space <space>` | - | 设置坐标空间，取值 `relative` / `pixel` |
 | `--coordinate-scale <value>` | - | 设置 `relative` 坐标量程，例如 `1` / `100` / `1000` |
 | `--device <name>` | - | 设置设备插件名称，例如 `local`、`android_adb`、`vnc` |

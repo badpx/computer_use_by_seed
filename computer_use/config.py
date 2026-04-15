@@ -119,6 +119,7 @@ class Config:
         'SAVE_CONTEXT_LOG': 'true',
         'MAX_STEPS': '100',
         'TEMPERATURE': '0.0',
+        'STREAM': '',
         'THINKING_MODE': '',
         'REASONING_EFFORT': '',
         'COORDINATE_SPACE': 'relative',
@@ -321,6 +322,11 @@ class Config:
     def temperature(self) -> float:
         """模型温度参数"""
         return self.get_float('TEMPERATURE', 0.0)
+
+    @property
+    def stream(self) -> Optional[bool]:
+        """是否显式启用流式响应，未设置时返回 None。"""
+        return self.get_optional_bool('STREAM')
 
     @property
     def display_index(self) -> int:

@@ -34,6 +34,7 @@ class OpenAiChatClient:
         model: str,
         messages: List[Dict[str, Any]],
         temperature: float,
+        stream: Optional[bool] = None,
         thinking_mode: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -48,6 +49,8 @@ class OpenAiChatClient:
             kwargs['tools'] = tools
         if max_tokens is not None:
             kwargs['max_tokens'] = max_tokens
+        if stream is not None:
+            kwargs['stream'] = stream
 
         extra_body = self._build_extra_body(
             thinking_mode=thinking_mode,

@@ -91,6 +91,45 @@ class OpenAiLlmAdapterTests(unittest.TestCase):
             temperature=0.0,
         )
 
+    def test_adapter_passes_stream_when_explicitly_configured(self):
+        from computer_use.llm.openai_adapter import OpenAiChatClient
+
+        sdk_client = mock.Mock()
+        sdk_client.chat.completions.create.return_value = object()
+        client = OpenAiChatClient(sdk_client=sdk_client, provider='openai')
+
+        client.create_chat_completion(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.0,
+            stream=True,
+        )
+
+        sdk_client.chat.completions.create.assert_called_once_with(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.0,
+            stream=True,
+        )
+
+    def test_adapter_omits_stream_when_unconfigured(self):
+        from computer_use.llm.openai_adapter import OpenAiChatClient
+
+        sdk_client = mock.Mock()
+        sdk_client.chat.completions.create.return_value = object()
+        client = OpenAiChatClient(sdk_client=sdk_client, provider='openai')
+
+        client.create_chat_completion(
+            model='demo-model',
+            messages=[{'role': 'user', 'content': 'hello'}],
+            temperature=0.0,
+        )
+
+        self.assertNotIn(
+            'stream',
+            sdk_client.chat.completions.create.call_args.kwargs,
+        )
+
     def test_create_llm_client_uses_openai_sdk_with_provider_and_connection_settings(self):
         from computer_use.llm.factory import create_llm_client
 

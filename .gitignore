@@ -68,3 +68,5 @@ example.py
 # Private plugin
 computer_use/devices/plugins/lumi_cua_sandbox/
 
+# Private skills
+skills/.*[^/]

@@ -103,6 +103,8 @@ class FakeLlmClient:
             'messages': kwargs['messages'],
             'temperature': kwargs['temperature'],
         }
+        if kwargs.get('stream') is not None:
+            request['stream'] = kwargs['stream']
         if kwargs.get('max_tokens') is not None:
             request['max_tokens'] = kwargs['max_tokens']
         if kwargs.get('tools'):
@@ -1808,6 +1810,16 @@ class AgentContextTests(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertNotIn('thinking', self.calls[0])
         self.assertNotIn('reasoning_effort', self.calls[0])
+        self.assertNotIn('stream', self.calls[0])
+
+    def test_agent_passes_stream_when_configured(self):
+        self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]
+
+        agent = self._make_agent(stream=True)
+        result = agent.run('Use stream mode')
+
+        self.assertTrue(result['success'])
+        self.assertTrue(self.calls[0]['stream'])
 
     def test_agent_passes_only_thinking_when_only_thinking_is_configured(self):
         self.responses[:] = ["Thought: done\nAction: finished(content='ok')"]

@@ -681,6 +681,7 @@ def print_config_info(
 def interactive_mode(
     model: Optional[str] = None,
     max_steps: Optional[int] = None,
+    stream: Optional[bool] = None,
     thinking_mode: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     coordinate_space: Optional[str] = None,
@@ -704,6 +705,7 @@ def interactive_mode(
     Args:
         model: 模型名称
         max_steps: 最大执行步数
+        stream: 是否启用流式响应
         thinking_mode: 模型思考模式
         reasoning_effort: 模型思考档位
         coordinate_space: 坐标空间
@@ -750,6 +752,7 @@ def interactive_mode(
         agent = ComputerUseAgent(
             model=model,
             max_steps=max_steps,
+            stream=stream,
             thinking_mode=thinking_mode,
             reasoning_effort=reasoning_effort,
             coordinate_space=coordinate_space,
@@ -870,6 +873,7 @@ def single_task_mode(
     instruction: str,
     model: Optional[str] = None,
     max_steps: Optional[int] = None,
+    stream: Optional[bool] = None,
     thinking_mode: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     coordinate_space: Optional[str] = None,
@@ -894,6 +898,7 @@ def single_task_mode(
         instruction: 任务指令
         model: 模型名称
         max_steps: 最大执行步数
+        stream: 是否启用流式响应
         thinking_mode: 模型思考模式
         reasoning_effort: 模型思考档位
         coordinate_space: 坐标空间
@@ -937,6 +942,7 @@ def single_task_mode(
     agent = ComputerUseAgent(
         model=model,
         max_steps=max_steps,
+        stream=stream,
         thinking_mode=thinking_mode,
         reasoning_effort=reasoning_effort,
         coordinate_space=coordinate_space,
@@ -1019,6 +1025,18 @@ def main():
         '-s',
         type=int,
         help='最大执行步数（默认从配置读取）'
+    )
+
+    stream_group = parser.add_mutually_exclusive_group()
+    stream_group.add_argument(
+        '--stream',
+        action='store_true',
+        help='启用模型流式响应参数'
+    )
+    stream_group.add_argument(
+        '--no-stream',
+        action='store_true',
+        help='禁用模型流式响应参数'
     )
 
     parser.add_argument(
@@ -1147,6 +1165,7 @@ def main():
     # 确定运行模式
     verbose = not args.quiet
     natural_scroll = None
+    stream = None
     thinking_mode = None
     reasoning_effort = None
     coordinate_space = None
@@ -1163,6 +1182,10 @@ def main():
         natural_scroll = True
     elif args.traditional_scroll:
         natural_scroll = False
+    if args.stream:
+        stream = True
+    elif args.no_stream:
+        stream = False
 
     if args.thinking:
         thinking_mode = args.thinking
@@ -1203,6 +1226,7 @@ def main():
                 instruction=args.instruction,
                 model=args.model,
                 max_steps=args.max_steps,
+                stream=stream,
                 thinking_mode=thinking_mode,
                 reasoning_effort=reasoning_effort,
                 coordinate_space=coordinate_space,
@@ -1228,6 +1252,7 @@ def main():
             interactive_mode(
                 model=args.model,
                 max_steps=args.max_steps,
+                stream=stream,
                 thinking_mode=thinking_mode,
                 reasoning_effort=reasoning_effort,
                 coordinate_space=coordinate_space,

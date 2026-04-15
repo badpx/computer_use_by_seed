@@ -269,6 +269,48 @@ class ConfigDefaultsTests(unittest.TestCase):
             else:
                 os.environ['PROVIDER_CONFIG_JSON'] = original_env
 
+    def test_stream_defaults_to_none(self):
+        original_env = os.environ.pop('STREAM', None)
+        original_load_from_file = Config._load_from_file
+        try:
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertIsNone(config.stream)
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is not None:
+                os.environ['STREAM'] = original_env
+
+    def test_stream_reads_true_from_env(self):
+        original_env = os.environ.get('STREAM')
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['STREAM'] = 'true'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertTrue(config.stream)
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is None:
+                os.environ.pop('STREAM', None)
+            else:
+                os.environ['STREAM'] = original_env
+
+    def test_stream_reads_false_from_env(self):
+        original_env = os.environ.get('STREAM')
+        original_load_from_file = Config._load_from_file
+        try:
+            os.environ['STREAM'] = 'false'
+            Config._load_from_file = lambda self: None
+            config = Config()
+            self.assertFalse(config.stream)
+        finally:
+            Config._load_from_file = original_load_from_file
+            if original_env is None:
+                os.environ.pop('STREAM', None)
+            else:
+                os.environ['STREAM'] = original_env
+
     def test_enable_ask_user_for_single_task_defaults_to_false(self):
         original_env = os.environ.pop('ENABLE_ASK_USER_FOR_SINGLE_TASK', None)
         original_load_from_file = Config._load_from_file
