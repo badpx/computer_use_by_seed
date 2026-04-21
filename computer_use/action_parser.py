@@ -3,8 +3,9 @@
 解析模型输出的 Thought 和 Action
 """
 
+import json
 import re
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 
 NUMBER_PATTERN = r"-?(?:\d+(?:\.\d+)?|\.\d+)"
 NUMERIC_PARAM_KEYS = {'x', 'y', 'steps', 'seconds', 'duration', 'time', 'wait_time'}
@@ -54,22 +55,45 @@ class ActionParser:
         Raises:
             ValueError: 当无法解析响应时
         """
-        # 提取 Thought
+        return self.parse_many(response)[0]
+
+    def parse_many(self, response: str) -> List[Dict[str, Any]]:
+        """
+        解析模型响应中的一个或多个动作。
+
+        Args:
+            response: 模型响应文本
+
+        Returns:
+            List[Dict[str, Any]]: 解析结果列表
+
+        Raises:
+            ValueError: 当无法解析任何动作时
+        """
         thought = self._extract_thought(response)
-        
-        # 提取 Action
-        action_str = self._extract_action(response)
-        
-        # 解析动作
-        action_type, action_inputs = self._parse_action(action_str)
-        
-        return {
-            'thought': thought,
-            'action_type': action_type,
-            'action_inputs': action_inputs,
-            'raw_response': response,
-            'action_str': action_str
-        }
+
+        function_call_actions = self._parse_function_call_wrapper(response, thought)
+        if function_call_actions:
+            return function_call_actions
+
+        action_block = self._extract_action(response)
+        action_calls = self._extract_action_calls(action_block)
+        if not action_calls:
+            raise ValueError(f"无法解析动作: {action_block}")
+
+        actions = []
+        for action_str in action_calls:
+            action_type, action_inputs = self._parse_action(action_str)
+            actions.append(
+                {
+                    'thought': thought,
+                    'action_type': action_type,
+                    'action_inputs': action_inputs,
+                    'raw_response': response,
+                    'action_str': action_str,
+                }
+            )
+        return actions
     
     def _extract_thought(self, response: str) -> str:
         """提取 Thought 部分"""
@@ -135,17 +159,82 @@ class ActionParser:
         
         return action_type, action_inputs
 
+    def _parse_function_call_wrapper(
+        self,
+        response: str,
+        thought: str,
+    ) -> List[Dict[str, Any]]:
+        """解析 <|FunctionCallBegin|> 包装的一个或多个函数调用。"""
+        wrapper_match = re.search(
+            r'<\|FunctionCallBegin\|>(.+?)<\|FunctionCallEnd\|>',
+            response,
+            re.DOTALL,
+        )
+        if not wrapper_match:
+            return []
+
+        payload_text = wrapper_match.group(1).strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"无法解析 function call JSON: {exc}") from exc
+
+        calls = payload if isinstance(payload, list) else [payload]
+        actions = []
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            name = str(call.get('name') or '').strip()
+            parameters = call.get('parameters', {})
+            if not name:
+                continue
+            if isinstance(parameters, str):
+                try:
+                    parameters = json.loads(parameters)
+                except json.JSONDecodeError:
+                    parameters = {}
+            if not isinstance(parameters, dict):
+                parameters = {}
+
+            action_str = self._format_function_call_action(name, parameters)
+            action_type, action_inputs = self._parse_action(action_str)
+            actions.append(
+                {
+                    'thought': thought,
+                    'action_type': action_type,
+                    'action_inputs': action_inputs,
+                    'raw_response': response,
+                    'action_str': action_str,
+                }
+            )
+        return actions
+
+    def _format_function_call_action(self, name: str, parameters: Dict[str, Any]) -> str:
+        """将 function-call payload 格式化为普通动作调用，复用参数解析逻辑。"""
+        if not parameters:
+            return f'{name}()'
+        params = ', '.join(
+            f'{key}={repr(value)}'
+            for key, value in parameters.items()
+        )
+        return f'{name}({params})'
+
+    def _extract_action_calls(self, text: str) -> List[str]:
+        """从文本中按顺序提取所有括号平衡的合法动作调用。"""
+        action_pattern = '|'.join(re.escape(action) for action in self.ACTION_TYPES)
+        calls = []
+        for match in re.finditer(rf'\b(?:{action_pattern})\s*\(', text, re.IGNORECASE):
+            if self._is_inside_quote(text, match.start()):
+                continue
+            action_call = self._extract_balanced_call(text, match.start())
+            if action_call:
+                calls.append(action_call.strip())
+        return calls
+
     def _extract_last_action_call(self, response: str) -> Optional[str]:
         """从自然语言响应中提取最后一个动作调用。"""
-        action_pattern = '|'.join(re.escape(action) for action in self.ACTION_TYPES)
-        matches = list(
-            re.finditer(rf'\b(?:{action_pattern})\s*\(', response, re.IGNORECASE)
-        )
-        for match in reversed(matches):
-            action_call = self._extract_balanced_call(response, match.start())
-            if action_call:
-                return action_call.strip()
-        return None
+        action_calls = self._extract_action_calls(response)
+        return action_calls[-1] if action_calls else None
 
     def _extract_balanced_call(self, text: str, start_index: int) -> Optional[str]:
         """从指定位置开始提取括号平衡的动作调用。"""
@@ -180,6 +269,28 @@ class ActionParser:
                     return text[start_index:index + 1]
 
         return None
+
+    def _is_inside_quote(self, text: str, target_index: int) -> bool:
+        """判断指定位置是否处于引号内部。"""
+        in_quote = None
+        escaped = False
+
+        for index, char in enumerate(text[:target_index]):
+            if in_quote is not None:
+                if escaped:
+                    escaped = False
+                elif char == '\\':
+                    escaped = True
+                elif self._is_in_word_apostrophe(text, index, in_quote):
+                    pass
+                elif char == in_quote:
+                    in_quote = None
+                continue
+
+            if char in {'"', "'"}:
+                in_quote = char
+
+        return in_quote is not None
     
     def _parse_params(self, params_str: str) -> Dict[str, Any]:
         """
@@ -325,3 +436,16 @@ def parse_action(response: str) -> Dict[str, Any]:
         Dict[str, Any]: 解析结果
     """
     return action_parser.parse(response)
+
+
+def parse_actions(response: str) -> List[Dict[str, Any]]:
+    """
+    便捷函数：解析一个或多个动作。
+
+    Args:
+        response: 模型响应文本
+
+    Returns:
+        List[Dict[str, Any]]: 解析结果列表
+    """
+    return action_parser.parse_many(response)

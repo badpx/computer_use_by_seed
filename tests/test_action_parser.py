@@ -1,6 +1,6 @@
 import unittest
 
-from computer_use.action_parser import parse_action
+from computer_use.action_parser import parse_action, parse_actions
 
 
 class ActionParserCoordinateTests(unittest.TestCase):
@@ -94,6 +94,62 @@ class ActionParserCoordinateTests(unittest.TestCase):
 
         self.assertEqual(parsed['action_type'], 'wait')
         self.assertEqual(parsed['action_inputs']['seconds'], 12.0)
+
+    def test_parse_multiple_actions_from_multiline_action_block(self):
+        parsed = parse_actions(
+            "Thought: replace text\n"
+            "Action:\n"
+            "hotkey(key='ctrl a')\n"
+            "hotkey(key='backspace')\n"
+            "type(content='hello\\n')"
+        )
+
+        self.assertEqual(
+            [action['action_type'] for action in parsed],
+            ['hotkey', 'hotkey', 'type'],
+        )
+        self.assertEqual(parsed[0]['action_inputs']['key'], 'ctrl a')
+        self.assertEqual(parsed[1]['action_inputs']['key'], 'backspace')
+        self.assertEqual(parsed[2]['action_inputs']['content'], 'hello\\n')
+
+    def test_parse_multiple_actions_from_semicolon_separated_action_line(self):
+        parsed = parse_actions(
+            "Thought: submit\n"
+            "Action: type(content='hello, world'); hotkey(key='enter')"
+        )
+
+        self.assertEqual(
+            [action['action_type'] for action in parsed],
+            ['type', 'hotkey'],
+        )
+        self.assertEqual(parsed[0]['action_inputs']['content'], 'hello, world')
+        self.assertEqual(parsed[1]['action_inputs']['key'], 'enter')
+
+    def test_parse_action_keeps_backward_compatible_first_action(self):
+        parsed = parse_action(
+            "Thought: replace text\n"
+            "Action:\n"
+            "hotkey(key='ctrl a')\n"
+            "type(content='hello')"
+        )
+
+        self.assertEqual(parsed['action_type'], 'hotkey')
+        self.assertEqual(parsed['action_inputs']['key'], 'ctrl a')
+
+    def test_parse_multiple_actions_from_function_call_wrapper(self):
+        parsed = parse_actions(
+            '<|FunctionCallBegin|>'
+            '[{"name":"type","parameters":{"content":"hello, world"}},'
+            '{"name":"hotkey","parameters":{"key":"enter"}}]'
+            '<|FunctionCallEnd|>'
+        )
+
+        self.assertEqual(
+            [action['action_type'] for action in parsed],
+            ['type', 'hotkey'],
+        )
+        self.assertEqual(parsed[0]['action_inputs']['content'], 'hello, world')
+        self.assertEqual(parsed[1]['action_inputs']['key'], 'enter')
 
     def test_extract_open_app_action_from_natural_language_response(self):
         parsed = parse_action(

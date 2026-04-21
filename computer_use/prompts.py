@@ -18,7 +18,9 @@ Action: ...
 ```
 
 ## Action Space
-Action must be a single function-style call such as click(...), wait(), or finished(...).
+Action may be one or more function-style calls such as click(...), wait(), or finished(...).
+When multiple actions are needed, put each call on its own line under `Action:`. They will be executed sequentially using the same current screenshot, without a new screenshot between actions. Keep multi-action sequences short and only combine actions whose targets will not depend on observing an intermediate screen update.
+`finished(...)` must be the final action when used.
 
 ```
 click(point='<point>x1 y1</point>')
@@ -55,7 +57,9 @@ Action: ...
 ```
 
 ## Action Space
-Action must be a single function-style call such as click(...), wait(), or finished(...).
+Action may be one or more function-style calls such as click(...), wait(), or finished(...).
+When multiple actions are needed, put each call on its own line under `Action:`. They will be executed sequentially using the same current screenshot, without a new screenshot between actions. Keep multi-action sequences short and only combine actions whose targets will not depend on observing an intermediate screen update.
+`finished(...)` must be the final action when used.
 
 ```
 click(point='<point>x1 y1</point>')

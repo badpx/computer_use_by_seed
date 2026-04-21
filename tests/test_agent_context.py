@@ -1830,6 +1830,72 @@ class AgentContextTests(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertEqual(self.calls[0]['max_tokens'], 512)
 
+    def test_agent_executes_multiple_actions_from_one_model_response(self):
+        self.responses[:] = [
+            "Thought: replace text\n"
+            "Action:\n"
+            "hotkey(key='ctrl a')\n"
+            "hotkey(key='backspace')\n"
+            "type(content='hello')",
+            "Thought: done\nAction: finished(content='ok')",
+        ]
+        self.exec_outcomes[:] = ['selected', 'deleted', 'typed']
+
+        agent = self._make_agent(include_execution_feedback=True)
+        result = agent.run('Replace text')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(
+            [action['action_type'] for action in self.executed_actions],
+            ['hotkey', 'hotkey', 'type'],
+        )
+        self.assertIn("hotkey(key='ctrl a')", result['steps'][0]['execution_result'])
+        self.assertIn("hotkey(key='backspace')", result['steps'][0]['execution_result'])
+        self.assertIn("type(content='hello')", result['steps'][0]['execution_result'])
+
+    def test_agent_stops_multi_action_sequence_on_first_failure(self):
+        self.responses[:] = [
+            "Thought: replace text\n"
+            "Action:\n"
+            "hotkey(key='ctrl a')\n"
+            "type(content='hello')",
+            "Thought: done\nAction: finished(content='ok')",
+        ]
+        self.exec_outcomes[:] = [RuntimeError('selection failed')]
+
+        agent = self._make_agent(include_execution_feedback=True)
+        result = agent.run('Replace text')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(
+            [action['action_type'] for action in self.executed_actions],
+            ['hotkey'],
+        )
+        self.assertEqual(result['steps'][0]['execution_status'], 'failed')
+        self.assertIn("hotkey(key='ctrl a')", result['steps'][0]['failure_reason'])
+        self.assertIn('selection failed', result['steps'][0]['failure_reason'])
+
+    def test_agent_stops_multi_action_sequence_when_finished_is_seen(self):
+        self.responses[:] = [
+            "Thought: finish now\n"
+            "Action:\n"
+            "type(content='done')\n"
+            "finished(content='ok')\n"
+            "type(content='should not run')",
+        ]
+        self.exec_outcomes[:] = ['typed']
+
+        agent = self._make_agent()
+        result = agent.run('Finish after one action')
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['final_response'], 'ok')
+        self.assertEqual(
+            [action['action_type'] for action in self.executed_actions],
+            ['type'],
+        )
+
     def test_compaction_ignores_agent_max_tokens_setting(self):
         self.responses[:] = [
             {

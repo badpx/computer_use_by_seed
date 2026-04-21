@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Callable, Dict, Any, List, Optional, Set, Tuple
 
 from .config import config, normalize_coordinate_space, resolve_thinking_settings
-from .action_parser import parse_action
+from .action_parser import parse_actions
 from .devices import create_device_adapter, discover_device_plugins
 from .devices.base import DeviceAdapter, DeviceCommand, DeviceFrame
 from .devices.command_mapper import map_action_to_command
@@ -429,9 +429,10 @@ class ComputerUseAgent:
                 
                 # 3. 解析动作
                 try:
-                    action = parse_action(response)
-                    thought_summary = action.get('thought', '')
-                    parsed_action = self._format_action(action)
+                    actions = parse_actions(response)
+                    thought_summary = actions[0].get('thought', '') if actions else ''
+                    parsed_action = self._format_actions(actions)
+                    action_record = self._build_action_record(actions)
                 except Exception as e:
                     failure_reason = self._format_parse_failure_reason(e, response)
                     step_elapsed_seconds = time.perf_counter() - step_start_time
@@ -480,181 +481,205 @@ class ComputerUseAgent:
                     continue
 
                 if self.verbose:
-                    print(f"  解析结果: {action['action_type']}")
-                
-                # 4. 检查是否完成
-                if action['action_type'] == 'finished':
-                    result['success'] = True
-                    result['final_response'] = action['action_inputs'].get('content', '')
-                    step_elapsed_seconds = time.perf_counter() - step_start_time
-                    step_record = self._build_step_record(
-                        step=self.current_step,
-                        screenshot_path=logged_screenshot_path,
-                        model_input=text_input,
-                        response=response,
-                        action=action,
-                        thought_summary=thought_summary,
-                        execution_status='finished',
-                        execution_result=result['final_response'],
-                        failure_reason=None,
-                        elapsed_seconds=step_elapsed_seconds,
+                    action_types = ', '.join(
+                        action.get('action_type', '') for action in actions
                     )
-                    result['steps'].append(step_record)
-                    self._record_history_entry(step_record, parsed_action=parsed_action)
-                    self._append_step_context(
-                        current_screenshot_item=current_screenshot_item,
-                        response=response,
-                        step_record=step_record,
-                        parsed_action=parsed_action,
-                        include_feedback=False,
-                    )
-                    self._set_context_estimated_tokens(
-                        self._estimate_next_context_tokens()
-                    )
-                    self._notify_runtime_status()
-                    self.context_logger.log_event(
-                        'step_result',
-                        instruction=instruction,
-                        step=self.current_step,
-                        thought_summary=thought_summary,
-                        parsed_action=parsed_action,
-                        execution_status='finished',
-                        execution_result=result['final_response'],
-                        failure_reason=None,
-                        elapsed_seconds=step_record['elapsed_seconds'],
-                        elapsed_time_text=step_record['elapsed_time_text'],
-                    )
-                    
-                    result['elapsed_seconds'] = time.perf_counter() - task_start_time
-                    result['elapsed_time_text'] = self._format_elapsed_time(
-                        result['elapsed_seconds']
-                    )
-                    if self.verbose:
-                        print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
-                        print(f"\n{'='*60}")
-                        print(
-                            f"[任务完成] {result['final_response']} "
-                            f"(总耗时: {result['elapsed_time_text']})"
+                    print(f"  解析结果: {action_types}")
+
+                action_results: List[Tuple[str, Any]] = []
+                finished_this_step = False
+                failed_this_step = False
+
+                for action in actions:
+                    current_parsed_action = self._format_action(action)
+
+                    # 4. 检查是否完成
+                    if action['action_type'] == 'finished':
+                        result['success'] = True
+                        result['final_response'] = action['action_inputs'].get('content', '')
+                        step_elapsed_seconds = time.perf_counter() - step_start_time
+                        step_record = self._build_step_record(
+                            step=self.current_step,
+                            screenshot_path=logged_screenshot_path,
+                            model_input=text_input,
+                            response=response,
+                            action=action_record,
+                            thought_summary=thought_summary,
+                            execution_status='finished',
+                            execution_result=result['final_response'],
+                            failure_reason=None,
+                            elapsed_seconds=step_elapsed_seconds,
                         )
-                        print(f"{'='*60}")
-                    break
-                
-                # 5. 执行动作
-                try:
-                    exec_result = self.device.execute_command(
-                        self._build_device_command(
-                            action=action,
-                            image_width=img_width,
-                            image_height=img_height,
-                            model_image_width=model_img_width,
-                            model_image_height=model_img_height,
+                        result['steps'].append(step_record)
+                        self._record_history_entry(step_record, parsed_action=parsed_action)
+                        self._append_step_context(
+                            current_screenshot_item=current_screenshot_item,
+                            response=response,
+                            step_record=step_record,
+                            parsed_action=parsed_action,
+                            include_feedback=False,
                         )
-                    )
-                except Exception as e:
-                    failure_reason = str(e)
-                    step_elapsed_seconds = time.perf_counter() - step_start_time
-                    step_record = self._build_step_record(
-                        step=self.current_step,
-                        screenshot_path=logged_screenshot_path,
-                        model_input=text_input,
-                        response=response,
-                        action=action,
-                        thought_summary=thought_summary,
-                        execution_status='failed',
-                        execution_result=None,
-                        failure_reason=failure_reason,
-                        elapsed_seconds=step_elapsed_seconds,
-                    )
-                    result['steps'].append(step_record)
-                    self._record_history_entry(step_record, parsed_action=parsed_action)
-                    self._append_step_context(
-                        current_screenshot_item=current_screenshot_item,
-                        response=response,
-                        step_record=step_record,
-                        parsed_action=parsed_action,
-                        include_feedback=True,
-                    )
-                    self._set_context_estimated_tokens(
-                        self._estimate_next_context_tokens()
-                    )
-                    self._notify_runtime_status()
-                    self.context_logger.log_event(
-                        'step_result',
-                        instruction=instruction,
-                        step=self.current_step,
-                        thought_summary=thought_summary,
-                        parsed_action=parsed_action,
-                        execution_status='failed',
-                        execution_result=None,
-                        failure_reason=failure_reason,
-                        elapsed_seconds=step_record['elapsed_seconds'],
-                        elapsed_time_text=step_record['elapsed_time_text'],
-                    )
-                    if self.verbose:
-                        print(f"  执行失败: {failure_reason}")
-                        print(
-                            f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}"
+                        self._set_context_estimated_tokens(
+                            self._estimate_next_context_tokens()
                         )
+                        self._notify_runtime_status()
+                        self.context_logger.log_event(
+                            'step_result',
+                            instruction=instruction,
+                            step=self.current_step,
+                            thought_summary=thought_summary,
+                            parsed_action=parsed_action,
+                            execution_status='finished',
+                            execution_result=result['final_response'],
+                            failure_reason=None,
+                            elapsed_seconds=step_record['elapsed_seconds'],
+                            elapsed_time_text=step_record['elapsed_time_text'],
+                        )
+
+                        result['elapsed_seconds'] = time.perf_counter() - task_start_time
+                        result['elapsed_time_text'] = self._format_elapsed_time(
+                            result['elapsed_seconds']
+                        )
+                        if self.verbose:
+                            print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
+                            print(f"\n{'='*60}")
+                            print(
+                                f"[任务完成] {result['final_response']} "
+                                f"(总耗时: {result['elapsed_time_text']})"
+                            )
+                            print(f"{'='*60}")
+                        finished_this_step = True
+                        break
+
+                    # 5. 执行动作
+                    try:
+                        exec_result = self.device.execute_command(
+                            self._build_device_command(
+                                action=action,
+                                image_width=img_width,
+                                image_height=img_height,
+                                model_image_width=model_img_width,
+                                model_image_height=model_img_height,
+                            )
+                        )
+                    except Exception as e:
+                        if len(actions) > 1:
+                            failure_reason = f"{current_parsed_action}: {e}"
+                        else:
+                            failure_reason = str(e)
+                        step_elapsed_seconds = time.perf_counter() - step_start_time
+                        step_record = self._build_step_record(
+                            step=self.current_step,
+                            screenshot_path=logged_screenshot_path,
+                            model_input=text_input,
+                            response=response,
+                            action=action_record,
+                            thought_summary=thought_summary,
+                            execution_status='failed',
+                            execution_result=None,
+                            failure_reason=failure_reason,
+                            elapsed_seconds=step_elapsed_seconds,
+                        )
+                        result['steps'].append(step_record)
+                        self._record_history_entry(step_record, parsed_action=parsed_action)
+                        self._append_step_context(
+                            current_screenshot_item=current_screenshot_item,
+                            response=response,
+                            step_record=step_record,
+                            parsed_action=parsed_action,
+                            include_feedback=True,
+                        )
+                        self._set_context_estimated_tokens(
+                            self._estimate_next_context_tokens()
+                        )
+                        self._notify_runtime_status()
+                        self.context_logger.log_event(
+                            'step_result',
+                            instruction=instruction,
+                            step=self.current_step,
+                            thought_summary=thought_summary,
+                            parsed_action=parsed_action,
+                            execution_status='failed',
+                            execution_result=None,
+                            failure_reason=failure_reason,
+                            elapsed_seconds=step_record['elapsed_seconds'],
+                            elapsed_time_text=step_record['elapsed_time_text'],
+                        )
+                        if self.verbose:
+                            print(f"  执行失败: {failure_reason}")
+                            print(
+                                f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}"
+                            )
+                        failed_this_step = True
+                        break
+
+                    if exec_result == 'DONE':
+                        result['success'] = True
+                        step_elapsed_seconds = time.perf_counter() - step_start_time
+                        step_record = self._build_step_record(
+                            step=self.current_step,
+                            screenshot_path=logged_screenshot_path,
+                            model_input=text_input,
+                            response=response,
+                            action=action_record,
+                            thought_summary=thought_summary,
+                            execution_status='finished',
+                            execution_result='DONE',
+                            failure_reason=None,
+                            elapsed_seconds=step_elapsed_seconds,
+                        )
+                        result['steps'].append(step_record)
+                        self._record_history_entry(step_record, parsed_action=parsed_action)
+                        self._append_step_context(
+                            current_screenshot_item=current_screenshot_item,
+                            response=response,
+                            step_record=step_record,
+                            parsed_action=parsed_action,
+                            include_feedback=False,
+                        )
+                        self._set_context_estimated_tokens(
+                            self._estimate_next_context_tokens()
+                        )
+                        self._notify_runtime_status()
+                        self.context_logger.log_event(
+                            'step_result',
+                            instruction=instruction,
+                            step=self.current_step,
+                            thought_summary=thought_summary,
+                            parsed_action=parsed_action,
+                            execution_status='finished',
+                            execution_result='DONE',
+                            failure_reason=None,
+                            elapsed_seconds=step_record['elapsed_seconds'],
+                            elapsed_time_text=step_record['elapsed_time_text'],
+                        )
+                        result['elapsed_seconds'] = time.perf_counter() - task_start_time
+                        result['elapsed_time_text'] = self._format_elapsed_time(
+                            result['elapsed_seconds']
+                        )
+                        if self.verbose:
+                            print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
+                            print(f"\n{'='*60}")
+                            print(f"[任务完成] (总耗时: {result['elapsed_time_text']})")
+                            print(f"{'='*60}")
+                        finished_this_step = True
+                        break
+
+                    action_results.append((current_parsed_action, exec_result))
+
+                if failed_this_step:
                     continue
-                
-                if exec_result == 'DONE':
-                    result['success'] = True
-                    step_elapsed_seconds = time.perf_counter() - step_start_time
-                    step_record = self._build_step_record(
-                        step=self.current_step,
-                        screenshot_path=logged_screenshot_path,
-                        model_input=text_input,
-                        response=response,
-                        action=action,
-                        thought_summary=thought_summary,
-                        execution_status='finished',
-                        execution_result='DONE',
-                        failure_reason=None,
-                        elapsed_seconds=step_elapsed_seconds,
-                    )
-                    result['steps'].append(step_record)
-                    self._record_history_entry(step_record, parsed_action=parsed_action)
-                    self._append_step_context(
-                        current_screenshot_item=current_screenshot_item,
-                        response=response,
-                        step_record=step_record,
-                        parsed_action=parsed_action,
-                        include_feedback=False,
-                    )
-                    self._set_context_estimated_tokens(
-                        self._estimate_next_context_tokens()
-                    )
-                    self._notify_runtime_status()
-                    self.context_logger.log_event(
-                        'step_result',
-                        instruction=instruction,
-                        step=self.current_step,
-                        thought_summary=thought_summary,
-                        parsed_action=parsed_action,
-                        execution_status='finished',
-                        execution_result='DONE',
-                        failure_reason=None,
-                        elapsed_seconds=step_record['elapsed_seconds'],
-                        elapsed_time_text=step_record['elapsed_time_text'],
-                    )
-                    result['elapsed_seconds'] = time.perf_counter() - task_start_time
-                    result['elapsed_time_text'] = self._format_elapsed_time(
-                        result['elapsed_seconds']
-                    )
-                    if self.verbose:
-                        print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
-                        print(f"\n{'='*60}")
-                        print(f"[任务完成] (总耗时: {result['elapsed_time_text']})")
-                        print(f"{'='*60}")
+                if finished_this_step:
                     break
 
                 step_elapsed_seconds = time.perf_counter() - step_start_time
+                exec_result = self._format_execution_results(action_results)
                 step_record = self._build_step_record(
                     step=self.current_step,
                     screenshot_path=logged_screenshot_path,
                     model_input=text_input,
                     response=response,
-                    action=action,
+                    action=action_record,
                     thought_summary=thought_summary,
                     execution_status='success',
                     execution_result=exec_result,
@@ -688,7 +713,7 @@ class ComputerUseAgent:
                 )
                 if self.verbose:
                     print(f"  步耗时: {self._format_elapsed_time(step_elapsed_seconds)}")
-                
+
                 # 等待一小段时间，让操作生效
                 time.sleep(0.5)
             
@@ -1868,6 +1893,41 @@ class ComputerUseAgent:
             for key, value in action_inputs.items()
         )
         return f'{action_type}({params})'
+
+    def _format_actions(self, actions: List[Dict[str, Any]]) -> str:
+        """将一个或多个解析动作转换为稳定字符串。"""
+        return '\n'.join(self._format_action(action) for action in actions)
+
+    def _build_action_record(self, actions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """构建 step record 中保存的动作结构，避免多动作重复保存整段响应。"""
+        if len(actions) == 1:
+            return actions[0]
+
+        compact_actions = []
+        for action in actions:
+            compact_actions.append(
+                {
+                    'action_type': action.get('action_type', ''),
+                    'action_inputs': dict(action.get('action_inputs') or {}),
+                    'action_str': action.get('action_str', ''),
+                }
+            )
+        return {
+            'action_type': 'multi_action',
+            'action_inputs': {'count': len(actions)},
+            'actions': compact_actions,
+        }
+
+    def _format_execution_results(self, action_results: List[Tuple[str, Any]]) -> str:
+        """汇总多动作执行结果。"""
+        if not action_results:
+            return ''
+        if len(action_results) == 1:
+            return str(action_results[0][1])
+        return '\n'.join(
+            f'{action_text}: {result}'
+            for action_text, result in action_results
+        )
 
     def _build_device_command(
         self,
