@@ -1,8 +1,9 @@
-import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import computer_use.skills as skills_module
 from computer_use.skills import (
     Skill,
     discover_skills,
@@ -13,6 +14,27 @@ from computer_use.skills import (
 
 
 class TestSkills(unittest.TestCase):
+    def _write_skill(
+        self,
+        base_dir: str,
+        directory_name: str,
+        name: str,
+        description: str,
+        instructions: str,
+    ) -> Path:
+        skill_dir = Path(base_dir) / directory_name
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            f"name: {name}\n"
+            f"description: {description}\n"
+            "---\n"
+            "\n"
+            f"{instructions}",
+            encoding="utf-8",
+        )
+        return skill_dir
+
     # 1
     def test_parse_frontmatter_extracts_name_and_description(self):
         content = (
@@ -45,7 +67,7 @@ class TestSkills(unittest.TestCase):
 
     # 4
     def test_discover_skills_finds_valid_skills(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as root_dir:
             skill_dir = Path(tmpdir) / "myskill"
             skill_dir.mkdir()
             skill_file = skill_dir / "SKILL.md"
@@ -59,7 +81,8 @@ class TestSkills(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            skills = discover_skills(tmpdir)
+            with patch.object(skills_module, "project_skills_dir", return_value=Path(root_dir)):
+                skills = discover_skills(tmpdir)
             self.assertEqual(len(skills), 1)
             self.assertEqual(skills[0].name, "myskill")
             self.assertEqual(skills[0].description, "A test skill")
@@ -67,19 +90,90 @@ class TestSkills(unittest.TestCase):
 
     # 5
     def test_discover_skills_missing_dir(self):
-        result = discover_skills("/nonexistent/path/xyz")
+        with patch.object(
+            skills_module,
+            "project_skills_dir",
+            return_value=Path("/nonexistent/project/skills"),
+        ):
+            result = discover_skills("/nonexistent/path/xyz")
         self.assertEqual(result, [])
 
     # 6
     def test_discover_skills_skips_directories_without_skill_md(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as root_dir:
             empty_dir = Path(tmpdir) / "noskill"
             empty_dir.mkdir()
 
-            skills = discover_skills(tmpdir)
+            with patch.object(skills_module, "project_skills_dir", return_value=Path(root_dir)):
+                skills = discover_skills(tmpdir)
             self.assertEqual(skills, [])
 
     # 7
+    def test_discover_skills_includes_project_root_skills(self):
+        with tempfile.TemporaryDirectory() as project_dir:
+            root_skills_dir = Path(project_dir) / "skills"
+            root_skills_dir.mkdir()
+            self._write_skill(
+                str(root_skills_dir),
+                "root-skill",
+                "root-skill",
+                "Project skill",
+                "Use project skill.",
+            )
+
+            with patch.object(skills_module, "project_skills_dir", return_value=root_skills_dir):
+                skills = discover_skills("/nonexistent/custom/skills")
+
+        self.assertEqual([skill.name for skill in skills], ["root-skill"])
+        self.assertIn("Use project skill.", skills[0].instructions)
+
+    # 8
+    def test_discover_skills_custom_dir_overrides_project_root_by_name(self):
+        with tempfile.TemporaryDirectory() as project_dir, tempfile.TemporaryDirectory() as custom_dir:
+            root_skills_dir = Path(project_dir) / "skills"
+            root_skills_dir.mkdir()
+            self._write_skill(
+                str(root_skills_dir),
+                "open-browser",
+                "open-browser",
+                "Project open browser",
+                "Project instructions.",
+            )
+            custom_skill_dir = self._write_skill(
+                custom_dir,
+                "open-browser",
+                "open-browser",
+                "Custom open browser",
+                "Custom instructions.",
+            )
+
+            with patch.object(skills_module, "project_skills_dir", return_value=root_skills_dir):
+                skills = discover_skills(custom_dir)
+
+        self.assertEqual([skill.name for skill in skills], ["open-browser"])
+        self.assertEqual(skills[0].description, "Custom open browser")
+        self.assertEqual(skills[0].directory, custom_skill_dir)
+        self.assertIn("Custom instructions.", skills[0].instructions)
+
+    # 9
+    def test_discover_skills_deduplicates_when_custom_dir_is_project_root(self):
+        with tempfile.TemporaryDirectory() as project_dir:
+            root_skills_dir = Path(project_dir) / "skills"
+            root_skills_dir.mkdir()
+            self._write_skill(
+                str(root_skills_dir),
+                "same-dir",
+                "same-dir",
+                "Same dir",
+                "Same directory instructions.",
+            )
+
+            with patch.object(skills_module, "project_skills_dir", return_value=root_skills_dir):
+                skills = discover_skills(str(root_skills_dir))
+
+        self.assertEqual([skill.name for skill in skills], ["same-dir"])
+
+    # 10
     def test_skills_to_tools_generates_correct_format(self):
         skill = Skill(
             name="greeter",
@@ -98,7 +192,7 @@ class TestSkills(unittest.TestCase):
             {"type": "object", "properties": {}, "required": []},
         )
 
-    # 8
+    # 11
     def test_load_skill_found_returns_instructions(self):
         skill = Skill(
             name="myskill",
@@ -109,7 +203,7 @@ class TestSkills(unittest.TestCase):
         result = load_skill([skill], "skill__myskill")
         self.assertEqual(result, "Follow these steps")
 
-    # 9
+    # 12
     def test_load_skill_not_found_returns_error(self):
         skill = Skill(
             name="myskill",

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Iterable, List, Optional
 
 
 @dataclass
@@ -53,22 +53,40 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
     return (metadata, body)
 
 
-def discover_skills(skills_dir: str) -> List[Skill]:
-    """Scan *skills_dir* for subdirectories containing ``SKILL.md``.
+def project_skills_dir() -> Path:
+    """Return the project-root skills directory."""
+    return Path(__file__).resolve().parents[1] / "skills"
 
-    Each valid skill directory must have a ``SKILL.md`` whose frontmatter
-    includes both ``name`` and ``description``.  Directories that don't
-    meet this requirement are silently skipped.
 
-    Returns the list sorted by skill name for deterministic ordering.
-    If *skills_dir* does not exist an empty list is returned.
-    """
-    path = Path(skills_dir)
-    if not path.exists():
+def _normalize_dir(path: Path) -> Path:
+    try:
+        return path.expanduser().resolve(strict=False)
+    except OSError:
+        return path.expanduser()
+
+
+def _skill_search_dirs(skills_dir: Optional[str]) -> List[Path]:
+    paths = [project_skills_dir()]
+    if skills_dir:
+        paths.append(Path(skills_dir))
+
+    deduped: List[Path] = []
+    seen = set()
+    for path in paths:
+        normalized = _normalize_dir(path)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(path.expanduser())
+    return deduped
+
+
+def _scan_skills_dir(skills_dir: Path) -> Iterable[Skill]:
+    if not skills_dir.exists():
         return []
 
     skills: List[Skill] = []
-    for child in path.iterdir():
+    for child in sorted(skills_dir.iterdir()):
         if not child.is_dir():
             continue
         skill_file = child / "SKILL.md"
@@ -92,7 +110,29 @@ def discover_skills(skills_dir: str) -> List[Skill]:
                 # TODO: Level 3 — 扫描 child 目录下的附加文件（排除 SKILL.md）填充 resources
             )
         )
+    return skills
 
+
+def discover_skills(skills_dir: Optional[str]) -> List[Skill]:
+    """Scan project-root skills plus *skills_dir* for ``SKILL.md`` files.
+
+    Each valid skill directory must have a ``SKILL.md`` whose frontmatter
+    includes both ``name`` and ``description``.  Directories that don't
+    meet this requirement are silently skipped.
+
+    Project-root ``skills/`` is scanned first.  *skills_dir* is scanned
+    afterwards, so custom skills with the same ``name`` override project
+    skills.
+
+    Returns the list sorted by skill name for deterministic ordering.
+    If neither directory exists an empty list is returned.
+    """
+    skills_by_name = {}
+    for directory in _skill_search_dirs(skills_dir):
+        for skill in _scan_skills_dir(directory):
+            skills_by_name[skill.name] = skill
+
+    skills = list(skills_by_name.values())
     skills.sort(key=lambda s: s.name)
     return skills
 
